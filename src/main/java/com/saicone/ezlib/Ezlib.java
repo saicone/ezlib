@@ -1,7 +1,6 @@
 package com.saicone.ezlib;
 
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -10,43 +9,35 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
 public class Ezlib {
 
     public static final String VERSION = "-SNAPSHOT";
-    public static final String LOADER_URL = "https://jitpack.io/com/saicone/ezlib/ezlib-loader/" + VERSION + "/ezlib-loader-" + VERSION + ".jar";
 
     private final File folder;
     private final PublicClassLoader classLoader;
     private final Object loader;
 
-    private final Method relocate;
-    private final Method append;
     private String defaultRepository = "https://repo.maven.apache.org/maven2/";
 
     public Ezlib(File folder) {
-        this.folder = folder;
-        try {
-            Path path = Files.createTempFile("ezlib-loader-" + VERSION + "(" + UUID.randomUUID() +  ")", ".jar.tmp");
-            path.toFile().deleteOnExit();
-            File file = download(LOADER_URL, path.toFile());
-            classLoader = new PublicClassLoader(file.toURI().toURL());
-        } catch (Throwable t) {
-            t.printStackTrace();
-            throw new NullPointerException("Can't create class loader for ezlib");
-        }
+        this(folder, null);
+    }
 
-        try {
-            Class<?> loaderClass = Class.forName("com.saicone.ezlib.EzlibLoader", true, classLoader);
-            loader = loaderClass.getDeclaredConstructor().newInstance();
-            relocate = loaderClass.getDeclaredMethod("relocate", File.class, File.class, Map.class);
-            append = loaderClass.getDeclaredMethod("append", URL.class, ClassLoader.class);
-        } catch (Throwable t) {
-            t.printStackTrace();
-            throw new NullPointerException("Can't initialize ezlib loader");
+    public Ezlib(File folder, PublicClassLoader classLoader) {
+        this(folder, classLoader, null);
+    }
+
+    public Ezlib(File folder, PublicClassLoader classLoader, Object loader) {
+        this.folder = folder;
+        if (!this.folder.exists()) {
+            this.folder.mkdirs();
         }
+        this.classLoader = classLoader == null ? createClassLoader() : classLoader;
+        this.loader = loader == null ? createLoader() : loader;
     }
 
     public File getFolder() {
@@ -70,12 +61,67 @@ public class Ezlib {
         return this;
     }
 
+    public PublicClassLoader createClassLoader() {
+        File file;
+        try {
+            file = download("com.saicone.ezlib:ezlib-loader:" + VERSION, "https://jitpack.io/");
+        } catch (IOException e) {
+            e.printStackTrace();
+            throw new NullPointerException("Can't load ezlib loader from dependency");
+        }
+
+        try {
+            return new PublicClassLoader(file.toURI().toURL());
+        } catch (Throwable t) {
+            t.printStackTrace();
+            throw new NullPointerException("Can't create class loader for ezlib");
+        }
+    }
+
+    public Object createLoader() {
+        try {
+            Class<?> loader = Class.forName("com.saicone.ezlib.EzlibLoader", true, classLoader);
+            return loader.getDeclaredConstructor().newInstance();
+        } catch (Throwable t) {
+            t.printStackTrace();
+            throw new NullPointerException("Can't initialize ezlib loader");
+        }
+    }
+
     public void close() {
         try {
             classLoader.close();
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    public void relocate(File input, File output, String pattern, String relocated) throws Throwable {
+        Map<String, String> map = new HashMap<>();
+        map.put(pattern, relocated);
+        relocate(input, output, map);
+    }
+
+    public void relocate(File input, File output, Map<String, String> relocations) throws Throwable {
+        Method relocate = loader.getClass().getDeclaredMethod("relocate", File.class, File.class, Map.class);
+        relocate.invoke(loader, input, output, relocations);
+    }
+
+    public void append(URL url) throws Throwable {
+        append(url, false);
+    }
+
+    public void append(URL url, boolean parent) throws Throwable {
+        if (parent) {
+            append(url, Ezlib.class.getClassLoader());
+        } else {
+            getClassLoader().addURL(url);
+        }
+    }
+
+    public void append(URL url, ClassLoader loader) throws Throwable {
+        Method append = this.loader.getClass().getDeclaredMethod("append", URL.class, ClassLoader.class);
+        append.invoke(this.loader, url, loader);
     }
 
     public boolean load(String dependency) {
@@ -99,34 +145,16 @@ public class Ezlib {
     }
 
     public boolean load(String dependency, String repository, Map<String, String> relocations, boolean parent) {
-        String[] split = dependency.split(":", 4);
-        if (split.length < 3) {
-            return false;
-        }
-        String repo = repository.endsWith("/") ? repository : repository + "/";
-        String fullVersion = split[2] + (split.length < 4 ? "" : "-" + split[3].replace(":", "-"));
-
-        String fileName = split[1] + "-" + fullVersion;
-        String url = repo + split[0].replace(".", "/") + "/" + split[1] + "/" + split[2] + "/" + fileName + ".jar";
-
         try {
-            File file = new File(folder, fileName + ".jar");
-            if (relocations.isEmpty()) {
-                if (!file.exists()) {
-                    download(url, file);
-                }
-            } else {
-                Path path = Files.createTempFile(fileName + "(" + UUID.randomUUID() + ")", ".jar.tmp");
+            File file = download(dependency, repository);
+            if (relocations != null && !relocations.isEmpty()) {
+                Path path = Files.createTempFile("[" + UUID.randomUUID() + "]" + file.getName(), ".tmp");
                 path.toFile().deleteOnExit();
-                relocate.invoke(loader, file.exists() ? file : download(url, file), path.toFile(), relocations);
+                relocate(file, path.toFile(), relocations);
                 file = path.toFile();
             }
 
-            if (parent) {
-                append.invoke(loader, file.toURI().toURL(), Ezlib.class.getClassLoader());
-            } else {
-                classLoader.addURL(file.toURI().toURL());
-            }
+            append(file.toURI().toURL(), parent);
         } catch (Throwable t) {
             t.printStackTrace();
             return false;
@@ -142,12 +170,28 @@ public class Ezlib {
         return load(dependency, defaultRepository, relocations, parent);
     }
 
+    public File download(String dependency, String repository) throws IOException {
+        String[] split = dependency.split(":", 4);
+        if (split.length < 3) {
+            throw new IllegalArgumentException("Malformatted dependency");
+        }
+
+        String repo = repository.endsWith("/") ? repository : repository + "/";
+        String fullVersion = split[2] + (split.length < 4 ? "" : "-" + split[3].replace(":", "-"));
+
+        String fileName = split[1] + "-" + fullVersion;
+        String url = repo + split[0].replace(".", "/") + "/" + split[1] + "/" + split[2] + "/" + fileName + ".jar";
+
+        File file = new File(folder, fileName + ".jar");
+        return file.exists() ? file : download(url, file);
+    }
+
     public File download(String url, File output) throws IOException {
         return download(new URL(url), output);
     }
 
     public File download(URL url, File output) throws IOException {
-        try (InputStream in = url.openStream(); OutputStream out = new FileOutputStream(output)) {
+        try (InputStream in = url.openStream(); OutputStream out = Files.newOutputStream(output.toPath())) {
             byte[] buffer = new byte[4096];
             int len;
             while ((len = in.read(buffer)) > 0) {
