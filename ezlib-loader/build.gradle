@@ -14,9 +14,13 @@ dependencies {
     implementation 'me.lucko:jar-relocator:1.5'
 }
 
-jar.dependsOn (shadowJar)
+jar {
+    enabled = false
+    dependsOn (shadowJar)
+}
 
 shadowJar {
+    archiveClassifier.set('')
     relocate 'org.objectweb.asm', project.group + '.libs.asm'
     relocate 'me.lucko.jarrelocator', project.group + '.libs.relocator'
 }
