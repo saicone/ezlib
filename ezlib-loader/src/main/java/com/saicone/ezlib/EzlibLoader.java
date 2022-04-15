@@ -36,9 +36,6 @@ public class EzlibLoader {
         lookup = l;
     }
 
-    EzlibLoader() {
-    }
-
     public void relocate(File input, File output, String pattern, String relocated) throws IOException {
         Map<String, String> map = new HashMap<>();
         map.put(pattern, relocated);
@@ -50,11 +47,11 @@ public class EzlibLoader {
         relocator.run();
     }
 
-    public static void append(URL url) throws Throwable {
+    public void append(URL url) throws Throwable {
         append(url, EzlibLoader.class.getClassLoader());
     }
 
-    public static void append(URL url, ClassLoader loader) throws Throwable {
+    public void append(URL url, ClassLoader loader) throws Throwable {
         try {
             // Try to use 'addURL' method inside URLClassLoader
             append(url, loader, URLClassLoader.class);
@@ -65,12 +62,12 @@ public class EzlibLoader {
         }
     }
 
-    public static void append(URL url, Object loader, Class<?> clazz) throws Throwable {
+    public void append(URL url, Object loader, Class<?> clazz) throws Throwable {
         MethodHandle addURL = lookup.findVirtual(clazz, "addURL", MethodType.methodType(void.class, URL.class));
         append(url, loader, addURL);
     }
 
-    public static void append(URL url, Object loader, MethodHandle addURL) throws Throwable {
+    public void append(URL url, Object loader, MethodHandle addURL) throws Throwable {
         addURL.invoke(loader, url);
     }
 
