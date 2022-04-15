@@ -1,0 +1,3 @@
+rootProject.name = 'ezlib'
+
+include('ezlib-loader')

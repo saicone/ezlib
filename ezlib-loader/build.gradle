@@ -1,0 +1,22 @@
+plugins {
+    id 'com.github.johnrengelman.shadow'
+}
+
+publishing {
+    publications {
+        shadow(MavenPublication) {
+            artifact shadowJar
+        }
+    }
+}
+
+dependencies {
+    implementation 'me.lucko:jar-relocator:1.5'
+}
+
+jar.dependsOn (shadowJar)
+
+shadowJar {
+    relocate 'org.objectweb.asm', project.group + '.libs.asm'
+    relocate 'me.lucko.jarrelocator', project.group + '.libs.relocator'
+}
