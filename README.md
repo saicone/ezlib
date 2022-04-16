@@ -88,7 +88,7 @@ dependencies {
 ## Features
 
 ### Append into parent
-Ezlib allow you to append dependencies into parent class loader just setting "true" at the final on load method.
+Ezlib allow you to append dependencies into parent class loader just setting "true" at the final of load method.
 ```java
 Ezlib ezlib = new Ezlib();
 
@@ -100,7 +100,8 @@ ezlib.load("com.saicone.rtag:rtag:1.1.0", "https://jitpack.io/", true);
 ```
 
 ### Package relocation
-You can load dependencies with package relocation.
+Ezlib uses [jar-relocator](https://github.com/lucko/jar-relocator), so you can load dependencies with package relocation.
+
 Here an example with Redis library and all the needed dependencies.
 ```java
 Map<String, String> relocations = new HashMap();
