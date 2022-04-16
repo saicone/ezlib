@@ -24,7 +24,7 @@ public class Ezlib {
     /**
      * Current ezlib version to download ezlib loader.
      */
-    public static String VERSION = "-SNAPSHOT";
+    public static String VERSION = "1.0";
 
     /**
      * Change current ezlib version to another one, use "-SNAPSHOT" for latest commit.
@@ -78,7 +78,7 @@ public class Ezlib {
      * @param loader      Loader object to append and relocate files.
      */
     public Ezlib(File folder, PublicClassLoader classLoader, Object loader) {
-        this.folder = folder;
+        this.folder = folder == null ? new File("libs") : folder;
         if (!this.folder.exists()) {
             this.folder.mkdirs();
         }
