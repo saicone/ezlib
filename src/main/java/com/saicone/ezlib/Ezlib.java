@@ -25,7 +25,7 @@ public class Ezlib {
     /**
      * Current ezlib version to download ezlib loader.
      */
-    public static String VERSION = "-SNAPSHOT";
+    public static String VERSION = "1.1";
 
     /**
      * Change current ezlib version to another one, use "-SNAPSHOT" for latest commit.
