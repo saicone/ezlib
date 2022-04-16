@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Method;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
@@ -24,7 +25,7 @@ public class Ezlib {
     /**
      * Current ezlib version to download ezlib loader.
      */
-    public static String VERSION = "1.0";
+    public static String VERSION = "-SNAPSHOT";
 
     /**
      * Change current ezlib version to another one, use "-SNAPSHOT" for latest commit.
@@ -137,21 +138,20 @@ public class Ezlib {
      * Create a public class loader, by default is created with ezlib loader dependency.
      *
      * @return A public class loader who save added URLs.
+     * @throws RuntimeException If any error occurs when creating the class loader.
      */
-    public PublicClassLoader createClassLoader() {
+    public PublicClassLoader createClassLoader() throws RuntimeException {
         File file;
         try {
             file = download("com.saicone.ezlib:ezlib-loader:" + VERSION, "https://jitpack.io/");
         } catch (IOException e) {
-            e.printStackTrace();
-            throw new NullPointerException("Can't load ezlib loader from dependency");
+            throw new RuntimeException("Can't download ezlib loader from dependency", e);
         }
 
         try {
             return new PublicClassLoader(file.toURI().toURL());
         } catch (Throwable t) {
-            t.printStackTrace();
-            throw new NullPointerException("Can't create class loader for ezlib");
+            throw new RuntimeException("Can't create public class loader for ezlib", t);
         }
     }
 
@@ -159,14 +159,14 @@ public class Ezlib {
      * Create a loader to use it for {@link #relocate(File, File, Map)} and {@link #append(URL, ClassLoader)} methods.
      *
      * @return A loader object to append and relocate files.
+     * @throws RuntimeException If any error occurs on loader initialization.
      */
-    public Object createLoader() {
+    public Object createLoader() throws RuntimeException {
         try {
             Class<?> loader = Class.forName("com.saicone.ezlib.EzlibLoader", true, classLoader);
             return loader.getDeclaredConstructor().newInstance();
         } catch (Throwable t) {
-            t.printStackTrace();
-            throw new NullPointerException("Can't initialize ezlib loader");
+            throw new RuntimeException("Can't initialize ezlib loader", t);
         }
     }
 
@@ -254,8 +254,9 @@ public class Ezlib {
      * @param dependency Dependency to load.
      * @return           True if dependency has loaded successfully.
      * @throws IllegalArgumentException If the dependency is not formatted correctly.
+     * @throws RuntimeException If any error occurs on dependency loading.
      */
-    public boolean load(String dependency) {
+    public boolean load(String dependency) throws IllegalArgumentException, RuntimeException {
         return load(dependency, false);
     }
 
@@ -266,8 +267,9 @@ public class Ezlib {
      * @param parent     True if you want to append the dependency into parent class path.
      * @return           True if dependency has loaded successfully.
      * @throws IllegalArgumentException If the dependency is not formatted correctly.
+     * @throws RuntimeException If any error occurs on dependency loading.
      */
-    public boolean load(String dependency, boolean parent) {
+    public boolean load(String dependency, boolean parent) throws IllegalArgumentException, RuntimeException {
         return load(dependency, defaultRepository, parent);
     }
 
@@ -278,8 +280,9 @@ public class Ezlib {
      * @param repository Repository to download the dependency from it.
      * @return           True if dependency has loaded successfully.
      * @throws IllegalArgumentException If the dependency is not formatted correctly.
+     * @throws RuntimeException If any error occurs on dependency loading.
      */
-    public boolean load(String dependency, String repository) {
+    public boolean load(String dependency, String repository) throws IllegalArgumentException, RuntimeException {
         return load(dependency, repository, false);
     }
 
@@ -291,8 +294,9 @@ public class Ezlib {
      * @param parent     True if you want to append the dependency into parent class path.
      * @return           True if dependency has loaded successfully.
      * @throws IllegalArgumentException If the dependency is not formatted correctly.
+     * @throws RuntimeException If any error occurs on dependency loading.
      */
-    public boolean load(String dependency, String repository, boolean parent) {
+    public boolean load(String dependency, String repository, boolean parent) throws IllegalArgumentException, RuntimeException {
         return load(dependency, repository, null, parent);
     }
 
@@ -305,8 +309,9 @@ public class Ezlib {
      * @param relocations A map containing all the paths you want to relocate.
      * @return            True if dependency has loaded successfully.
      * @throws IllegalArgumentException If the dependency is not formatted correctly.
+     * @throws RuntimeException If any error occurs on dependency loading.
      */
-    public boolean load(String dependency, String repository, Map<String, String> relocations) {
+    public boolean load(String dependency, String repository, Map<String, String> relocations) throws IllegalArgumentException, RuntimeException {
         return load(dependency, repository, relocations, false);
     }
 
@@ -320,21 +325,40 @@ public class Ezlib {
      * @param parent      True if you want to append the dependency into parent class path.
      * @return            True if dependency has loaded successfully.
      * @throws IllegalArgumentException If the dependency is not formatted correctly.
+     * @throws RuntimeException If any error occurs on dependency loading.
      */
-    public boolean load(String dependency, String repository, Map<String, String> relocations, boolean parent) {
+    public boolean load(String dependency, String repository, Map<String, String> relocations, boolean parent) throws IllegalArgumentException, RuntimeException {
+        File file;
         try {
-            File file = download(dependency, repository);
-            if (relocations != null && !relocations.isEmpty()) {
-                Path path = Files.createTempFile("[" + UUID.randomUUID() + "]" + file.getName(), ".tmp");
-                path.toFile().deleteOnExit();
-                relocate(file, path.toFile(), relocations);
-                file = path.toFile();
-            }
+            file = download(dependency, repository);
+        } catch (IOException e) {
+            throw new RuntimeException("Can't download '" + dependency + "' dependency", e);
+        }
 
+        if (relocations != null && !relocations.isEmpty()) {
+            Path path;
+            try {
+                path = Files.createTempFile("[" + UUID.randomUUID() + "]" + file.getName(), ".tmp");
+            } catch (IOException e) {
+                e.printStackTrace();
+                return false;
+            }
+            path.toFile().deleteOnExit();
+            try {
+                relocate(file, path.toFile(), relocations);
+            } catch (Throwable t) {
+                throw new RuntimeException("Can't relocate '" + dependency + "' dependency packages", t);
+            }
+            file = path.toFile();
+        }
+
+        try {
             append(file.toURI().toURL(), parent);
-        } catch (Throwable t) {
-            t.printStackTrace();
+        } catch (MalformedURLException e) {
+            e.printStackTrace();
             return false;
+        } catch (Throwable t) {
+            throw new RuntimeException("Can't append '" + dependency + "' dependency into " + (parent ? "parent" : "child") + " class loader", t);
         }
         return true;
     }
@@ -346,8 +370,9 @@ public class Ezlib {
      * @param relocations A map containing all the paths you want to relocate.
      * @return            True if dependency has loaded successfully.
      * @throws IllegalArgumentException If the dependency is not formatted correctly.
+     * @throws RuntimeException If any error occurs on dependency loading.
      */
-    public boolean load(String dependency, Map<String, String> relocations) {
+    public boolean load(String dependency, Map<String, String> relocations) throws IllegalArgumentException, RuntimeException {
         return load(dependency, relocations, false);
     }
 
@@ -359,8 +384,9 @@ public class Ezlib {
      * @param parent      True if you want to append the dependency into parent class path.
      * @return            True if dependency has loaded successfully.
      * @throws IllegalArgumentException If the dependency is not formatted correctly.
+     * @throws RuntimeException If any error occurs on dependency loading.
      */
-    public boolean load(String dependency, Map<String, String> relocations, boolean parent) {
+    public boolean load(String dependency, Map<String, String> relocations, boolean parent) throws IllegalArgumentException, RuntimeException {
         return load(dependency, defaultRepository, relocations, parent);
     }
 
@@ -373,7 +399,7 @@ public class Ezlib {
      * @throws IOException If any error occurs with the download.
      * @throws IllegalArgumentException If the dependency is not formatted correctly.
      */
-    public File download(String dependency, String repository) throws IOException {
+    public File download(String dependency, String repository) throws IOException, IllegalArgumentException {
         String[] split = dependency.split(":", 4);
         if (split.length < 3) {
             throw new IllegalArgumentException("Malformatted dependency");
