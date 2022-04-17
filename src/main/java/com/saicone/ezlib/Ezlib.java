@@ -22,6 +22,7 @@ import java.util.UUID;
  */
 public class Ezlib {
 
+    private static final String GROUP = new StringBuilder().append("com").append(".").append("saicone").append(".").append("ezlib").toString();
     /**
      * Current ezlib version to download ezlib loader.
      */
@@ -143,7 +144,7 @@ public class Ezlib {
     public PublicClassLoader createClassLoader() throws RuntimeException {
         File file;
         try {
-            file = download("com.saicone.ezlib:ezlib-loader:" + VERSION, "https://jitpack.io/");
+            file = download(GROUP + ":ezlib-loader:" + VERSION, "https://jitpack.io/");
         } catch (IOException e) {
             throw new RuntimeException("Can't download ezlib loader from dependency", e);
         }
@@ -163,7 +164,7 @@ public class Ezlib {
      */
     public Object createLoader() throws RuntimeException {
         try {
-            Class<?> loader = Class.forName("com.saicone.ezlib.EzlibLoader", true, classLoader);
+            Class<?> loader = Class.forName(GROUP + ".EzlibLoader", true, classLoader);
             return loader.getDeclaredConstructor().newInstance();
         } catch (Throwable t) {
             throw new RuntimeException("Can't initialize ezlib loader", t);
