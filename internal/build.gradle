@@ -11,7 +11,7 @@ publishing {
 }
 
 dependencies {
-    implementation 'me.lucko:jar-relocator:1.5'
+    implementation 'me.lucko:jar-relocator:1.6'
 }
 
 jar {
@@ -22,5 +22,5 @@ jar {
 shadowJar {
     archiveClassifier.set('')
     relocate 'org.objectweb.asm', project.group + '.asm92'
-    relocate 'me.lucko.jarrelocator', project.group + '.relocator15'
+    relocate 'me.lucko.jarrelocator', project.group + '.relocator16'
 }

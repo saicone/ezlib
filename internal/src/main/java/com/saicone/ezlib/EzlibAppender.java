@@ -1,25 +1,20 @@
 package com.saicone.ezlib;
 
-import me.lucko.jarrelocator.JarRelocator;
 import sun.misc.Unsafe;
 
-import java.io.File;
-import java.io.IOException;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.Field;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.util.HashMap;
-import java.util.Map;
 
 /**
- * EzlibLoader class to relocate and append classes.
+ * EzlibAppender class to append classes.
  *
  * @author Rubenicos
  */
-public class EzlibLoader {
+public class EzlibAppender {
 
     private static final Unsafe unsafe;
     private static final MethodHandles.Lookup lookup;
@@ -42,43 +37,13 @@ public class EzlibLoader {
     }
 
     /**
-     * Relocate a jar file including paths and imports and put the changes into an output file.<br>
-     * If output file does not exist, it will be created.
-     *
-     * @param input     Input file to relocate.
-     * @param output    Output file to put all the changes.
-     * @param pattern   Path to relocate.
-     * @param relocated Relocated path.
-     * @throws IOException If any error occurs on relocation.
-     */
-    public void relocate(File input, File output, String pattern, String relocated) throws IOException {
-        Map<String, String> map = new HashMap<>();
-        map.put(pattern, relocated);
-        relocate(input, output, map);
-    }
-
-    /**
-     * Relocate a jar file including paths and imports and put the changes into an output file.<br>
-     * If output file does not exist, it will be created.
-     *
-     * @param input       Input file to relocate.
-     * @param output      Output file to put all the changes.
-     * @param relocations A map containing all the paths you want to relocate.
-     * @throws IOException If any error occurs on relocation.
-     */
-    public void relocate(File input, File output, Map<String, String> relocations) throws IOException {
-        JarRelocator relocator = new JarRelocator(input, output, relocations);
-        relocator.run();
-    }
-
-    /**
      * Append a URL into loader parent class loader.
      *
      * @param url URL to append.
      * @throws Throwable If any error occurs on reflected method invoking.
      */
     public void append(URL url) throws Throwable {
-        append(url, EzlibLoader.class.getClassLoader());
+        append(url, EzlibAppender.class.getClassLoader());
     }
 
     /**
@@ -131,17 +96,23 @@ public class EzlibLoader {
      * @return       An object representing URLClassPath inside class loader.
      */
     public static Object getLoaderUcp(ClassLoader loader) {
-        Field field;
+        Class<?> clazz;
+        Field field = null;
         try {
+            // Try to get ucp field from URLClassLoader
             field = URLClassLoader.class.getDeclaredField("ucp");
         } catch (NoSuchFieldError | NoSuchFieldException e) {
-            try {
-                field = loader.getClass().getDeclaredField("ucp");
-            } catch (NoSuchFieldError | NoSuchFieldException ex) {
+            // Make a recursive look hover provided ClassLoader
+            clazz = loader.getClass();
+            while (field == null) {
                 try {
-                    field = loader.getClass().getSuperclass().getDeclaredField("ucp");
-                } catch (NoSuchFieldException exception) {
-                    throw new NullPointerException("Can't find URLClassPath field from " + loader.getClass().getName() + " class");
+                    field = clazz.getDeclaredField("ucp");
+                } catch (NoSuchFieldError | NoSuchFieldException ex) {
+                    clazz = clazz.getSuperclass();
+
+                    if (clazz == Object.class) {
+                        throw new NullPointerException("Can't find URLClassPath field from " + loader.getClass().getName() + " class");
+                    }
                 }
             }
         }

@@ -33,7 +33,3 @@ publishing {
         }
     }
 }
-
-dependencies {
-    compileOnly project(':ezlib-loader')
-}

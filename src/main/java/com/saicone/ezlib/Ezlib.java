@@ -12,7 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.UUID;
+import java.util.StringJoiner;
 
 /**
  * <p>Ezlib class to load, download &amp; append libraries into class path.<br>
@@ -22,11 +22,16 @@ import java.util.UUID;
  */
 public class Ezlib {
 
-    private static final String GROUP = new StringBuilder().append("com").append(".").append("saicone").append(".").append("ezlib").toString();
+    private static final String DEFAULT_FOLDER = "libs";
+
+    /**
+     * Original ezlib package group that cannot be affected with relocations.
+     */
+    public static final String GROUP = new String(new char[] {'c', 'o', 'm', '.', 's', 'a', 'i', 'c', 'o', 'n', 'e', '.', 'e', 'z', 'l', 'i', 'b'});
     /**
      * Current ezlib version to download ezlib loader.
      */
-    public static String VERSION = "1.1";
+    public static String VERSION = "-SNAPSHOT";
 
     /**
      * Change current ezlib version to another one, use "-SNAPSHOT" for latest commit.
@@ -39,11 +44,17 @@ public class Ezlib {
         }
     }
 
+    // Object parameters
     private final File folder;
-    private final PublicClassLoader classLoader;
-    private final Object loader;
 
+    // Explicit initialization params
+    private PublicClassLoader publicClassLoader;
+    private Loader loader;
+
+    // Object options
+    private ClassLoader parentClassLoader = Ezlib.class.getClassLoader();
     private String defaultRepository = "https://repo.maven.apache.org/maven2/";
+    private boolean pathSave = true;
 
     /**
      * Constructs an Ezlib using default libs folder at root path.
@@ -58,34 +69,7 @@ public class Ezlib {
      * @param folder Folder to save the downloaded files.
      */
     public Ezlib(File folder) {
-        this(folder, null);
-    }
-
-    /**
-     * Constructs an Ezlib with specified libs folder and class loader.
-     *
-     * @param folder      Folder to save the downloaded files.
-     * @param classLoader Public class loader to add URLs.
-     */
-    public Ezlib(File folder, PublicClassLoader classLoader) {
-        this(folder, classLoader, null);
-    }
-
-    /**
-     * Constructs an Ezlib with all parameters.<br>
-     * Take in count the "loader" will be used for {@link #relocate(File, File, Map)} and {@link #append(URL, ClassLoader)} methods.
-     *
-     * @param folder      Folder to save the downloaded files.
-     * @param classLoader Public class loader to add URLs.
-     * @param loader      Loader object to append and relocate files.
-     */
-    public Ezlib(File folder, PublicClassLoader classLoader, Object loader) {
-        this.folder = folder == null ? new File("libs") : folder;
-        if (!this.folder.exists()) {
-            this.folder.mkdirs();
-        }
-        this.classLoader = classLoader == null ? createClassLoader() : classLoader;
-        this.loader = loader == null ? createLoader() : loader;
+        this.folder = folder == null ? new File(DEFAULT_FOLDER) : folder;
     }
 
     /**
@@ -98,21 +82,32 @@ public class Ezlib {
     }
 
     /**
-     * Get current class loader.
+     * Get current class loader.<br>
+     * Take in count this value must be initialized using {@link #init()}
      *
      * @return A public class loader who save added URLs.
      */
-    public PublicClassLoader getClassLoader() {
-        return classLoader;
+    public PublicClassLoader getPublicClassLoader() {
+        return publicClassLoader;
     }
 
     /**
-     * Get current loader instance.
+     * Get current loader instance.<br>
+     * Take in count this value must be initialized using {@link #init()}
      *
      * @return An object representing a URLs loader and class relocator.
      */
-    public Object getLoader() {
+    public Loader getLoader() {
         return loader;
+    }
+
+    /**
+     * Get current parent class loader.
+     *
+     * @return A class loader to append files.
+     */
+    public ClassLoader getParentClassLoader() {
+        return parentClassLoader;
     }
 
     /**
@@ -122,6 +117,33 @@ public class Ezlib {
      */
     public String getDefaultRepository() {
         return defaultRepository;
+    }
+
+    /**
+     * Gets if the current ezlib is saving dependencies into sub folders.
+     *
+     * @return true if it is saving into sub folders.
+     */
+    public boolean isPathSave() {
+        return pathSave;
+    }
+
+    /**
+     * Get if the current ezlib is already initialized once.
+     *
+     * @return try if it was initialized.
+     */
+    public boolean isInitialized() {
+        return publicClassLoader != null && loader != null;
+    }
+
+    /**
+     * Set parent class loader who is used to append files.
+     *
+     * @param parentClassLoader A class loader to append files.
+     */
+    public void setParentClassLoader(ClassLoader parentClassLoader) {
+        this.parentClassLoader = parentClassLoader;
     }
 
     /**
@@ -136,17 +158,67 @@ public class Ezlib {
     }
 
     /**
+     * Change the current method to save downloaded dependencies.
+     *
+     * @param pathSave true to save dependencies into sub folders.
+     */
+    public void setPathSave(boolean pathSave) {
+        this.pathSave = pathSave;
+    }
+
+    /**
+     * Initialize ezlib.
+     *
+     * @return the current ezlib instance.
+     */
+    public Ezlib init() {
+        return init(null, null);
+    }
+
+    /**
+     * Initialize ezlib with defined PublicClassLoader.
+     *
+     * @param publicClassLoader class loader to use.
+     * @return                  the current ezlib instance.
+     */
+    public Ezlib init(PublicClassLoader publicClassLoader) {
+        return init(publicClassLoader, null);
+    }
+
+    /**
+     * Initialize ezlib with defined Loader.
+     *
+     * @param loader loader to use.
+     * @return       the current ezlib instance.
+     */
+    public Ezlib init(Loader loader) {
+        return init(null, loader);
+    }
+
+    /**
+     * Initialize with defined PublicClassLoader and Loader.
+     *
+     * @param publicClassLoader class loader to use.
+     * @param loader            loader to use.
+     * @return                  the current ezlib instance.
+     */
+    public Ezlib init(PublicClassLoader publicClassLoader, Loader loader) {
+        this.publicClassLoader = publicClassLoader == null ? createClassLoader() : publicClassLoader;
+        this.loader = loader == null ? createLoader() : loader;
+        return this;
+    }
+
+    /**
      * Create a public class loader, by default is created with ezlib loader dependency.
      *
      * @return A public class loader who save added URLs.
-     * @throws RuntimeException If any error occurs when creating the class loader.
      */
-    public PublicClassLoader createClassLoader() throws RuntimeException {
+    public PublicClassLoader createClassLoader() {
         File file;
         try {
-            file = download(GROUP + ":ezlib-loader:" + VERSION, "https://jitpack.io/");
+            file = download(GROUP + ":internal:" + VERSION, "https://jitpack.io/");
         } catch (IOException e) {
-            throw new RuntimeException("Can't download ezlib loader from dependency", e);
+            throw new RuntimeException("Can't download ezlib internal classes from dependency", e);
         }
 
         try {
@@ -157,17 +229,15 @@ public class Ezlib {
     }
 
     /**
-     * Create a loader to use it for {@link #relocate(File, File, Map)} and {@link #append(URL, ClassLoader)} methods.
+     * Create a loader to use it for {@link Loader#relocate(File, File, Map)} and {@link Loader#append(URL, ClassLoader)} methods.
      *
      * @return A loader object to append and relocate files.
-     * @throws RuntimeException If any error occurs on loader initialization.
      */
-    public Object createLoader() throws RuntimeException {
+    public Loader createLoader() {
         try {
-            Class<?> loader = Class.forName(GROUP + ".EzlibLoader", true, classLoader);
-            return loader.getDeclaredConstructor().newInstance();
-        } catch (Throwable t) {
-            throw new RuntimeException("Can't initialize ezlib loader", t);
+            return new Loader();
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException("Cannot find the required classes from PublicClassLoader", e);
         }
     }
 
@@ -175,220 +245,82 @@ public class Ezlib {
      * Close current public class loader.
      */
     public void close() {
-        try {
-            classLoader.close();
-        } catch (IOException e) {
-            e.printStackTrace();
+        if (publicClassLoader != null) {
+            try {
+                publicClassLoader.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 
     /**
-     * Relocate a jar file including paths and imports and put the changes into an output file.<br>
-     * If output file does not exist, it will be created.
+     * Create loadable dependency with provided file.
      *
-     * @param input     Input file to relocate.
-     * @param output    Output file to put all the changes.
-     * @param pattern   Path to relocate.
-     * @param relocated Relocated path.
-     * @throws Throwable If any error occurs on reflected method invoking.
+     * @param file File to load has dependency.
+     * @return     the dependency itself.
      */
-    public void relocate(File input, File output, String pattern, String relocated) throws Throwable {
-        Map<String, String> map = new HashMap<>();
-        map.put(pattern, relocated);
-        relocate(input, output, map);
+    public LoadableDependency dependency(File file) {
+        return new LoadableDependency(file);
     }
 
     /**
-     * Relocate a jar file including paths and imports and put the changes into an output file.<br>
-     * If output file does not exist, it will be created.
+     * Create loadable dependency with provided gradle-like path.
      *
-     * @param input       Input file to relocate.
-     * @param output      Output file to put all the changes.
-     * @param relocations A map containing all the paths you want to relocate.
-     * @throws Throwable If any error occurs on reflected method invoking.
+     * @param path Gradle like path to load dependency.
+     * @return     the dependency itself.
      */
-    public void relocate(File input, File output, Map<String, String> relocations) throws Throwable {
-        Method relocate = loader.getClass().getDeclaredMethod("relocate", File.class, File.class, Map.class);
-        relocate.invoke(loader, input, output, relocations);
+    public LoadableDependency dependency(String path) {
+        return new LoadableDependency(path);
     }
 
     /**
-     * Append a URL into current public class path instance.
+     * Create loadable dependency with provided gradle-like path and repository url.
      *
-     * @param url URL to append.
-     * @throws Throwable If any error occurs on reflected method invoking.
+     * @param path       Gradle like path to load dependency.
+     * @param repository Repository url to download from.
+     * @return           the dependency itself.
      */
-    public void append(URL url) throws Throwable {
-        append(url, false);
+    public LoadableDependency dependency(String path, String repository) {
+        return new LoadableDependency(path).repository(repository);
     }
 
-    /**
-     * Append a URL into class path.
-     *
-     * @param url    URL to append.
-     * @param parent True if you want to append into parent class path.
-     * @throws Throwable If any error occurs on reflected method invoking.
-     */
-    public void append(URL url, boolean parent) throws Throwable {
-        if (parent) {
-            append(url, Ezlib.class.getClassLoader());
-        } else {
-            getClassLoader().addURL(url);
-        }
-    }
-
-    /**
-     * Append a URL into defined class loader.
-     *
-     * @param url    URL to append.
-     * @param loader Class loader to append.
-     * @throws Throwable If any error occurs on reflected method invoking.
-     */
-    public void append(URL url, ClassLoader loader) throws Throwable {
-        Method append = this.loader.getClass().getDeclaredMethod("append", URL.class, ClassLoader.class);
-        append.invoke(this.loader, url, loader);
-    }
-
-    /**
-     * Load a dependency using gradle-like format (group:artifact:version).
-     *
-     * @param dependency Dependency to load.
-     * @return           True if dependency has loaded successfully.
-     * @throws IllegalArgumentException If the dependency is not formatted correctly.
-     * @throws RuntimeException If any error occurs on dependency loading.
-     */
-    public boolean load(String dependency) throws IllegalArgumentException, RuntimeException {
-        return load(dependency, false);
-    }
-
-    /**
-     * Load a dependency using gradle-like format (group:artifact:version).
-     *
-     * @param dependency Dependency to load.
-     * @param parent     True if you want to append the dependency into parent class path.
-     * @return           True if dependency has loaded successfully.
-     * @throws IllegalArgumentException If the dependency is not formatted correctly.
-     * @throws RuntimeException If any error occurs on dependency loading.
-     */
-    public boolean load(String dependency, boolean parent) throws IllegalArgumentException, RuntimeException {
-        return load(dependency, defaultRepository, parent);
-    }
-
-    /**
-     * Load a dependency using gradle-like format (group:artifact:version) and specified repository.
-     *
-     * @param dependency Dependency to load.
-     * @param repository Repository to download the dependency from it.
-     * @return           True if dependency has loaded successfully.
-     * @throws IllegalArgumentException If the dependency is not formatted correctly.
-     * @throws RuntimeException If any error occurs on dependency loading.
-     */
-    public boolean load(String dependency, String repository) throws IllegalArgumentException, RuntimeException {
-        return load(dependency, repository, false);
-    }
-
-    /**
-     * Load a dependency using gradle-like format (group:artifact:version) and specified repository.
-     *
-     * @param dependency Dependency to load.
-     * @param repository Repository to download the dependency from it.
-     * @param parent     True if you want to append the dependency into parent class path.
-     * @return           True if dependency has loaded successfully.
-     * @throws IllegalArgumentException If the dependency is not formatted correctly.
-     * @throws RuntimeException If any error occurs on dependency loading.
-     */
-    public boolean load(String dependency, String repository, boolean parent) throws IllegalArgumentException, RuntimeException {
-        return load(dependency, repository, null, parent);
-    }
-
-    /**
-     * Load a dependency using gradle-like format (group:artifact:version) and specified repository
-     * with class path relocations.
-     *
-     * @param dependency  Dependency to load.
-     * @param repository  Repository to download the dependency from it.
-     * @param relocations A map containing all the paths you want to relocate.
-     * @return            True if dependency has loaded successfully.
-     * @throws IllegalArgumentException If the dependency is not formatted correctly.
-     * @throws RuntimeException If any error occurs on dependency loading.
-     */
-    public boolean load(String dependency, String repository, Map<String, String> relocations) throws IllegalArgumentException, RuntimeException {
-        return load(dependency, repository, relocations, false);
-    }
-
-    /**
-     * Load a dependency using gradle-like format (group:artifact:version) and specified repository
-     * with class path relocations.
-     *
-     * @param dependency  Dependency to load.
-     * @param repository  Repository to download the dependency from it.
-     * @param relocations A map containing all the paths you want to relocate.
-     * @param parent      True if you want to append the dependency into parent class path.
-     * @return            True if dependency has loaded successfully.
-     * @throws IllegalArgumentException If the dependency is not formatted correctly.
-     * @throws RuntimeException If any error occurs on dependency loading.
-     */
-    public boolean load(String dependency, String repository, Map<String, String> relocations, boolean parent) throws IllegalArgumentException, RuntimeException {
-        File file;
-        try {
-            file = download(dependency, repository);
-        } catch (IOException e) {
-            throw new RuntimeException("Can't download '" + dependency + "' dependency", e);
+    private boolean load(LoadableDependency dependency) {
+        File file = dependency.file;
+        if (dependency.file == null) {
+            try {
+                file = download(dependency.path, dependency.repository, dependency.urlFormat);
+            } catch (IOException e) {
+                throw new RuntimeException("Can't download '" + dependency + "' dependency", e);
+            }
         }
 
-        if (relocations != null && !relocations.isEmpty()) {
+        if (dependency.relocations != null && !dependency.relocations.isEmpty()) {
             Path path;
             try {
-                path = Files.createTempFile("[" + UUID.randomUUID() + "]" + file.getName(), ".tmp");
+                path = Files.createTempFile(file.getName() + '.' + Math.abs(dependency.relocations.hashCode()), ".tmp");
             } catch (IOException e) {
                 e.printStackTrace();
                 return false;
             }
             path.toFile().deleteOnExit();
             try {
-                relocate(file, path.toFile(), relocations);
+                loader.relocate(file, path.toFile(), dependency.relocations);
             } catch (Throwable t) {
-                throw new RuntimeException("Can't relocate '" + dependency + "' dependency packages", t);
+                return false;
             }
             file = path.toFile();
         }
 
         try {
-            append(file.toURI().toURL(), parent);
+            loader.append(file.toURI().toURL(), dependency.parent);
         } catch (MalformedURLException e) {
             e.printStackTrace();
             return false;
         } catch (Throwable t) {
-            throw new RuntimeException("Can't append '" + dependency + "' dependency into " + (parent ? "parent" : "child") + " class loader", t);
+            return false;
         }
         return true;
-    }
-
-    /**
-     * Load a dependency using gradle-like format (group:artifact:version) with class path relocations.
-     *
-     * @param dependency  Dependency to load.
-     * @param relocations A map containing all the paths you want to relocate.
-     * @return            True if dependency has loaded successfully.
-     * @throws IllegalArgumentException If the dependency is not formatted correctly.
-     * @throws RuntimeException If any error occurs on dependency loading.
-     */
-    public boolean load(String dependency, Map<String, String> relocations) throws IllegalArgumentException, RuntimeException {
-        return load(dependency, relocations, false);
-    }
-
-    /**
-     * Load a dependency using gradle-like format (group:artifact:version) with class path relocations.
-     *
-     * @param dependency  Dependency to load.
-     * @param relocations A map containing all the paths you want to relocate.
-     * @param parent      True if you want to append the dependency into parent class path.
-     * @return            True if dependency has loaded successfully.
-     * @throws IllegalArgumentException If the dependency is not formatted correctly.
-     * @throws RuntimeException If any error occurs on dependency loading.
-     */
-    public boolean load(String dependency, Map<String, String> relocations, boolean parent) throws IllegalArgumentException, RuntimeException {
-        return load(dependency, defaultRepository, relocations, parent);
     }
 
     /**
@@ -401,22 +333,23 @@ public class Ezlib {
      * @throws IllegalArgumentException If the dependency is not formatted correctly.
      */
     public File download(String dependency, String repository) throws IOException, IllegalArgumentException {
-        String[] split = dependency.split(":", 4);
-        if (split.length < 3) {
-            throw new IllegalArgumentException("Malformatted dependency");
-        }
+        return download(dependency, repository, null);
+    }
 
-        String repo = repository.endsWith("/") ? repository : repository + "/";
-        String fullVersion = split[2] + (split.length < 4 ? "" : "-" + split[3].replace(":", "-"));
-
-        String fileName = split[1] + "-" + fullVersion;
-        String url = repo + split[0].replace(".", "/") + "/" + split[1] + "/" + split[2] + "/" + fileName + ".jar";
-
-        if (!folder.exists()) {
-            folder.mkdirs();
-        }
-        File file = new File(folder, fileName + ".jar");
-        return file.exists() ? file : download(url, file);
+    /**
+     * Download a dependency using gradle-like format (group:artifact:version) from repository with defined url format.
+     *
+     * @param dependency Dependency to load.
+     * @param repository Repository to download the dependency from it.
+     * @param urlFormat  Url download format.
+     * @return           A file representing the downloaded dependency.
+     * @throws IOException If any error occurs with the download.
+     * @throws IllegalArgumentException If the dependency is not formatted correctly.
+     */
+    public File download(String dependency, String repository, String urlFormat) throws IOException, IllegalArgumentException {
+        String path = parseUrl(dependency, urlFormat != null ? urlFormat : "%group%/%artifact%/%version%/%artifact%-%fileVersion%.jar");
+        File file = findFile(path);
+        return file.exists() ? file : download(parseRepository(repository != null ? repository : defaultRepository) + path, file);
     }
 
     /**
@@ -453,6 +386,64 @@ public class Ezlib {
     }
 
     /**
+     * Parse the provided repository to use for download dependencies.
+     *
+     * @param repository Repository url.
+     * @return           The repository url correctly formatted.
+     */
+    public String parseRepository(String repository) {
+        return repository.endsWith("/") ? repository : repository + "/";
+    }
+
+    /**
+     * Parse the provided dependency using url format.
+     *
+     * @param dependency The dependency gradle-like path.
+     * @param urlFormat  The url format after repository url.
+     * @return           The current dependency as url format to use with repository url.
+     * @throws IllegalArgumentException if the dependency is not formatted correctly.
+     */
+    public String parseUrl(String dependency, String urlFormat) throws IllegalArgumentException {
+        final String[] split = dependency.split(":");
+        if (split.length < 3) {
+            throw new IllegalArgumentException("Malformed dependency");
+        }
+        String group = split[0].replace(".", "/");
+        StringJoiner fileVersion = new StringJoiner("-");
+        for (int i = 2; i < split.length; i++) {
+            final String s = split[i];
+            final int index = s.indexOf('@') + 1;
+            if (index > 1 && index < s.length()) {
+                fileVersion.add(s.substring(index));
+                split[i] = s.substring(0, index - 1);
+            } else {
+                fileVersion.add(s);
+            }
+        }
+
+        return urlFormat
+                .replace("%group%", group)
+                .replace("%artifact%", split[1])
+                .replace("%version%", split[2])
+                .replace("%fileVersion%", fileVersion.toString());
+    }
+
+    private File findFile(String path) {
+        File folder = this.folder;
+        int index = path.lastIndexOf('/');
+        String name = path.substring(index + 1);
+        if (pathSave && index > 0) {
+            for (String s : path.substring(0, index).split("/")) {
+                folder = new File(folder, s);
+            }
+        }
+        if (!folder.exists()) {
+            folder.mkdirs();
+        }
+        return new File(folder, name);
+    }
+
+    /**
      * Simple PublicClassLoader class to add URLs with a public method.
      */
     public static class PublicClassLoader extends URLClassLoader {
@@ -480,6 +471,211 @@ public class Ezlib {
         @Override
         public void addURL(URL url) {
             super.addURL(url);
+        }
+    }
+
+    /**
+     * Loader class to relocate and append files.
+     */
+    public class Loader {
+
+        private final Object appender;
+        private final Object relocator;
+        private final Method appendMethod;
+        private final Method relocateMethod;
+
+        /**
+         * Initialize loader with default parameters.
+         *
+         * @throws ClassNotFoundException if cannot find the required classes to initialize.
+         */
+        public Loader() throws ClassNotFoundException {
+            this(Class.forName(GROUP + ".EzlibAppender", true, publicClassLoader), Class.forName(GROUP + ".EzlibRelocator", true, publicClassLoader));
+        }
+
+        /**
+         * Initialize loader with defined appender and relocator classes.
+         *
+         * @param appenderClass  Appender class.
+         * @param relocatorClass Relocator class.
+         */
+        public Loader(Class<?> appenderClass, Class<?> relocatorClass) {
+            try {
+                this.appender = appenderClass.getDeclaredConstructor().newInstance();
+                this.relocator = relocatorClass.getDeclaredConstructor().newInstance();
+                this.appendMethod = appenderClass.getDeclaredMethod("append", URL.class, ClassLoader.class);
+                this.relocateMethod = relocatorClass.getDeclaredMethod("relocate", File.class, File.class, Map.class);
+            } catch (Exception e) {
+                throw new RuntimeException("Cannot initialize Loader from Ezlib", e);
+            }
+        }
+
+        /**
+         * Initialize loader with defined appender and relocator with its methods.
+         *
+         * @param appender       Appender to use.
+         * @param relocator      Relocator to use.
+         * @param appendMethod   Append method.
+         * @param relocateMethod Relocate method
+         */
+        public Loader(Object appender, Object relocator, Method appendMethod, Method relocateMethod) {
+            this.appender = appender;
+            this.relocator = relocator;
+            this.appendMethod = appendMethod;
+            this.relocateMethod = relocateMethod;
+        }
+
+        /**
+         * Relocate a jar file including paths and imports and put the changes into an output file.<br>
+         * If output file does not exist, it will be created.
+         *
+         * @param input     Input file to relocate.
+         * @param output    Output file to put all the changes.
+         * @param pattern   Path to relocate.
+         * @param relocated Relocated path.
+         * @throws Throwable If any error occurs on reflected method invoking.
+         */
+        public void relocate(File input, File output, String pattern, String relocated) throws Throwable {
+            Map<String, String> map = new HashMap<>();
+            map.put(pattern, relocated);
+            relocate(input, output, map);
+        }
+
+        /**
+         * Relocate a jar file including paths and imports and put the changes into an output file.<br>
+         * If output file does not exist, it will be created.
+         *
+         * @param input       Input file to relocate.
+         * @param output      Output file to put all the changes.
+         * @param relocations A map containing all the paths you want to relocate.
+         * @throws Throwable If any error occurs on reflected method invoking.
+         */
+        public void relocate(File input, File output, Map<String, String> relocations) throws Throwable {
+            relocateMethod.invoke(relocator, input, output, relocations);
+        }
+
+        /**
+         * Append a URL into current public class path instance.
+         *
+         * @param url URL to append.
+         * @throws Throwable If any error occurs on reflected method invoking.
+         */
+        public void append(URL url) throws Throwable {
+            append(url, false);
+        }
+
+        /**
+         * Append a URL into class path.
+         *
+         * @param url    URL to append.
+         * @param parent True if you want to append into parent class path.
+         * @throws Throwable If any error occurs on reflected method invoking.
+         */
+        public void append(URL url, boolean parent) throws Throwable {
+            if (parent) {
+                append(url, getParentClassLoader());
+            } else {
+                getPublicClassLoader().addURL(url);
+            }
+        }
+
+        /**
+         * Append a URL into defined class loader.
+         *
+         * @param url    URL to append.
+         * @param loader Class loader to append.
+         * @throws Throwable If any error occurs on reflected method invoking.
+         */
+        public void append(URL url, ClassLoader loader) throws Throwable {
+            appendMethod.invoke(appender, url, loader);
+        }
+    }
+
+    /**
+     * Loadable dependency class to edit dependency after load.
+     */
+    public class LoadableDependency {
+
+        private final String path;
+        private final File file;
+
+        private String repository;
+        private String urlFormat;
+        private Map<String, String> relocations;
+        private boolean parent;
+
+        /**
+         * Constructs a loadable dependency using gradle-like path format (group:artifact:version).
+         *
+         * @param path Dependency path.
+         */
+        public LoadableDependency(String path) {
+            this.path = path;
+            this.file = null;
+        }
+
+        /**
+         * Constructs a loadable dependency using existing file.
+         *
+         * @param file File to load as dependency.
+         */
+        public LoadableDependency(File file) {
+            this.path = null;
+            this.file = file;
+        }
+
+        /**
+         * Set dependency repository url.
+         *
+         * @param repository Repository url to download dependency from.
+         * @return           the current dependency object.
+         */
+        public LoadableDependency repository(String repository) {
+            this.repository = repository;
+            return this;
+        }
+
+        /**
+         * Set dependency url format to download.
+         *
+         * @param urlFormat Url download format.
+         * @return          the current dependency object.
+         */
+        public LoadableDependency urlFormat(String urlFormat) {
+            this.urlFormat = urlFormat;
+            return this;
+        }
+
+        /**
+         * Set dependency relocations.
+         *
+         * @param relocations Relocations to apply when dependency is loaded.
+         * @return            the current dependency object.
+         */
+        public LoadableDependency relocations(Map<String, String> relocations) {
+            this.relocations = relocations;
+            return this;
+        }
+
+        /**
+         * Change the dependency load method.
+         *
+         * @param parent true to load dependency into parent class loader.
+         * @return       the current dependency object.
+         */
+        public LoadableDependency parent(boolean parent) {
+            this.parent = parent;
+            return this;
+        }
+
+        /**
+         * Load the current dependency.
+         *
+         * @return true if dependency was loaded successfully.
+         * @throws IllegalArgumentException if the dependency is not formatted correctly.
+         */
+        public boolean load() throws IllegalArgumentException {
+            return Ezlib.this.load(this);
         }
     }
 }
