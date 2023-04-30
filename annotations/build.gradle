@@ -1,0 +1,21 @@
+plugins {
+    id 'java-library'
+}
+
+java {
+    sourceSets.named('main').get().java {
+        srcDir('src/ap/java')
+    }
+
+    sourceSets.named('main').get().resources {
+        srcDir('src/ap/resources')
+    }
+}
+
+dependencies {
+    api 'com.google.code.gson:gson:2.10.1'
+}
+
+javadoc {
+    exclude('com/saicone/ezlib/ap/**')
+}
