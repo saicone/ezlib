@@ -2,6 +2,9 @@ package com.saicone.ezlib;
 
 import java.lang.annotation.*;
 
+/**
+ * Specifies the needed dependency to run the actual project.
+ */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Repeatable(Dependencies.class)
@@ -65,6 +68,14 @@ public @interface Dependency {
      * @return true if this dependency loading doesn't affect the current program.
      */
     boolean optional() default false;
+
+    /**
+     * Scopes used to include sub dependencies from pom information.<br>
+     * By default, is used {@code runtime} and {@code compile} scopes.
+     *
+     * @return an array of scopes names.
+     */
+    String[] scopes() default {};
 
     /**
      * Test the provided classes, if all classes exist the dependency will be ignored.<br>

@@ -18,10 +18,8 @@ import javax.tools.FileObject;
 import javax.tools.StandardLocation;
 import java.io.BufferedWriter;
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Annotation processor for ezlib annotations.
@@ -172,14 +170,17 @@ public class EzlibAnnotationProcessor extends AbstractProcessor {
         if (dependency.optional()) {
             map.put("optional", true);
         }
+        if (dependency.scopes().length > 0) {
+            map.put("scopes", Arrays.stream(dependency.scopes()).collect(Collectors.toSet()));
+        }
         if (dependency.test().length > 0) {
-            map.put("test", dependency.test());
+            map.put("test", Arrays.stream(dependency.test()).collect(Collectors.toSet()));
         }
         if (dependency.condition().length > 0) {
-            map.put("condition", dependency.condition());
+            map.put("condition", Arrays.stream(dependency.condition()).collect(Collectors.toSet()));
         }
         if (dependency.exclude().length > 0) {
-            map.put("exclude", dependency.exclude());
+            map.put("exclude", Arrays.stream(dependency.exclude()).collect(Collectors.toSet()));
         }
         if (dependency.relocate().length > 0) {
             map.put("relocate", parseRelocations(dependency.relocate()));
