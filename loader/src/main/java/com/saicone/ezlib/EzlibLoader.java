@@ -20,6 +20,9 @@ import java.net.URLConnection;
 import java.util.*;
 import java.util.function.BiConsumer;
 import java.util.function.Predicate;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * EzlibLoader class to load &amp; apply all the needed dependencies from files
@@ -29,19 +32,22 @@ import java.util.function.Predicate;
  */
 public class EzlibLoader {
 
+    private static final Pattern NODE_VARIABLE = Pattern.compile("\\$\\{([^}]+)}");
+
     // Loader parameters
     private final ClassLoader classLoader;
     private final File folder;
     private final String[] files;
     // Explicit initialization parameters
     private final Ezlib ezlib;
-    private DocumentBuilder docBuilder;
+    private XmlParser xmlParser;
 
     // Loadable objects
     private final Set<Repository> repositories = new HashSet<>();
     private final Set<Dependency> dependencies = new HashSet<>();
     private final Map<String, String> relocations = new HashMap<>();
     private final Map<String, Predicate<String>> conditions = new HashMap<>();
+    private final Set<Dependency> applied = new HashSet<>();
 
     // Loader options
     private BiConsumer<Integer, String> logger = (level, text) -> {};
@@ -226,7 +232,7 @@ public class EzlibLoader {
     public Reader getReader(String type, String name) throws IOException {
         switch (type.toLowerCase()) {
             case "file":
-                final File file = new File(ezlib.getFolder(), name);
+                final File file = new File(name);
                 return file.exists() ? new FileReader(file) : null;
             case "url":
                 return new BufferedReader(new InputStreamReader(new URL(name).openConnection().getInputStream()));
@@ -264,16 +270,8 @@ public class EzlibLoader {
         } else {
             logger.accept(3, "Ezlib is already initialized...");
         }
-        if (docBuilder == null) {
-            try {
-                DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-                factory.setFeature("http://xml.org/sax/features/validation", false);
-                factory.setFeature("http://apache.org/xml/features/nonvalidating/load-dtd-grammar", false);
-                factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
-                docBuilder = factory.newDocumentBuilder();
-            } catch (ParserConfigurationException e) {
-                throw new RuntimeException("Cannot initialize document builder", e);
-            }
+        if (xmlParser == null) {
+            xmlParser = new XmlParser();
         }
     }
 
@@ -295,9 +293,13 @@ public class EzlibLoader {
 
         // Apply all loaded dependencies using global parameters
         logger.accept(3, "Applying all dependencies...");
+        int count = 0;
         for (Dependency dependency : dependencies) {
-            applyDependency(dependency);
+            if (applyDependency(dependency)) {
+                count++;
+            }
         }
+        logger.accept(3, "Applied " + count + " dependenc" + (count == 1 ? "y" : "ies"));
         // Return the loader itself
         return this;
     }
@@ -320,7 +322,13 @@ public class EzlibLoader {
      */
     public void loadFile(String name) {
         logger.accept(4, "Loading file " + name);
-        final int index = name.lastIndexOf('.') + 1;
+        boolean removeSuffix = false;
+        int index = name.lastIndexOf('.');
+        if (name.lastIndexOf('?') > index) {
+            removeSuffix = true;
+            index = name.lastIndexOf('?');
+        }
+        index++;
         if (index < 2 || index >= name.length()) {
             logger.accept(2, "The file '" + name + "' doesn't have any type");
             return;
@@ -331,7 +339,7 @@ public class EzlibLoader {
             logger.accept(2, "Cannot find file reader for file type '" + type + "'");
             return;
         }
-        try (Reader reader = getReader(name)) {
+        try (Reader reader = getReader(removeSuffix ? name.substring(0, index - 1) : name)) {
             if (reader == null) {
                 logger.accept(2, "Cannot find reader for file " + name);
                 return;
@@ -356,6 +364,7 @@ public class EzlibLoader {
                 }
                 Object object;
                 try {
+                    field.setAccessible(true);
                     object = field.get(null);
                 } catch (IllegalAccessException e) {
                     continue;
@@ -364,10 +373,10 @@ public class EzlibLoader {
                 if (object instanceof Dependencies) {
                     ((Dependencies) object).load(this);
                 } else if (object instanceof Repository) {
-                    repositories.add((Repository) object);
+                    loadRepository((Repository) object);
                     type = "repository";
                 } else if (object instanceof Dependency) {
-                    dependencies.add((Dependency) object);
+                    loadDependency((Dependency) object);
                     type = "dependency";
                 } else if (object instanceof String[]) {
                     loadRelocations((String[]) object);
@@ -394,13 +403,29 @@ public class EzlibLoader {
     }
 
     /**
+     * Load provided repository into ezlib loader.
+     *
+     * @param repository the repository to load.
+     */
+    public void loadRepository(Repository repository) {
+        if (repository.url.toLowerCase().startsWith("http:") && !repository.allowInsecureProtocol) {
+            logger.accept(1, "The repository " + repository.url + " uses an insecure protocol without explicit option to allow it, so will be ignored");
+            repositories.remove(repository);
+            return;
+        }
+        this.repositories.add(repository);
+    }
+
+    /**
      * Load provided repositories into ezlib loader.
      *
      * @param repositories a collection of repositories, can be null.
      */
     public void loadRepositories(Collection<Repository> repositories) {
         if (repositories != null) {
-            this.repositories.addAll(repositories);
+            for (Repository repository : repositories) {
+                loadRepository(repository);
+            }
             logger.accept(4, "Loaded " + repositories.size() + " repositor" + (repositories.size() == 1 ? "y" : "ies"));
         }
     }
@@ -412,22 +437,36 @@ public class EzlibLoader {
      */
     public void loadRepositories(Document pom) {
         // Document path: repositories.repository.url
-        NodeList list = pom.getDocumentElement().getChildNodes();
-        for (int i = 0; i < list.getLength(); i++) {
-            Node node = list.item(i);
-            if (node.getNodeName().equals("repositories")) {
-                list = ((Element) node).getElementsByTagName("repository");
-                for (i = 0; i < list.getLength(); i++) {
-                    node = list.item(i);
-                    String url = elementText((Element) node, "url");
-                    if (url != null) {
-                        repositories.add(new Repository().url(url));
-                        logger.accept(4, "Loaded repository from pom: " + url);
-                    }
-                }
-                break;
+        Element element = pom.getDocumentElement();
+        for (Element repository : xmlParser.getElements(element, "repositories", "repository")) {
+            String url = xmlParser.getTextContent(element, repository, "url");
+            if (url != null) {
+                loadRepository(new Repository().url(url));
+                logger.accept(4, "Loaded repository from pom: " + url);
             }
         }
+    }
+
+    /**
+     * Load provided dependency into ezlib loader.
+     *
+     * @param dependency the dependency to load.
+     */
+    public void loadDependency(Dependency dependency) {
+        dependency.path = parse(dependency.path);
+        dependency.relocate = parse(dependency.relocate);
+        if (dependency.relocate != null) {
+            // Remove duplicated relocations
+            for (Map.Entry<String, String> entry : this.relocations.entrySet()) {
+                if (Objects.equals(entry.getValue(), dependency.relocate.get(entry.getKey()))) {
+                    dependency.relocate.remove(entry.getKey());
+                }
+            }
+            if (dependency.relocate.isEmpty()) {
+                dependency.relocate = null;
+            }
+        }
+        this.dependencies.add(dependency);
     }
 
     /**
@@ -437,7 +476,9 @@ public class EzlibLoader {
      */
     public void loadDependencies(Collection<Dependency> dependencies) {
         if (dependencies != null) {
-            this.dependencies.addAll(dependencies);
+            for (Dependency dependency : dependencies) {
+                loadDependency(dependency);
+            }
             logger.accept(4, "Loaded " + dependencies.size() + " dependenc" + (dependencies.size() == 1 ? "y" : "ies"));
         }
     }
@@ -458,9 +499,7 @@ public class EzlibLoader {
      */
     public void loadRelocations(Map<String, String> relocations) {
         if (relocations != null) {
-            for (Map.Entry<String, String> entry : relocations.entrySet()) {
-                this.relocations.put(parse(entry.getKey()), parse(entry.getValue()));
-            }
+            this.relocations.putAll(parse(relocations));
             logger.accept(4, "Loaded " + relocations.size() + " relocation" + (relocations.size() == 1 ? "" : "s"));
         }
     }
@@ -469,58 +508,56 @@ public class EzlibLoader {
      * Apply provided dependency into class loader.
      *
      * @param dependency the dependency to apply.
+     * @return           true if dependency was applied correctly.
      */
-    public void applyDependency(Dependency dependency) {
+    public boolean applyDependency(Dependency dependency) {
+        if (applied.contains(dependency)) {
+            logger.accept(4, "The dependency " + dependency.path + " is already applied into class loader");
+            return true;
+        }
         logger.accept(4, "Applying " + dependency);
         // Check if dependency will be loaded using test or using custom conditions
-        if (test(dependency) || !eval(dependency.condition)) {
+        if (dependency.meetTest(this) || !eval(dependency.condition)) {
             logger.accept(4, "The dependency doesn't need to be loaded");
-            return;
+            return false;
         }
-        dependency.path = parse(dependency.path);
         logger.accept(3, "Loading dependency " + dependency.path);
 
         // Create full relocation map using global and dependency relocations
         final Map<String, String> relocations = new HashMap<>(this.relocations);
         if (dependency.relocate != null) {
-            for (Map.Entry<String, String> entry : dependency.relocate.entrySet()) {
-                relocations.put(parse(entry.getKey()), parse(entry.getValue()));
-            }
+            relocations.putAll(dependency.relocate);
         }
 
         Repository repo = null;
-        boolean meet = false;
         try {
             // Find repository url and format checking if dependency has repository url or name to get from global repositories
-            repo = parseRepository(dependency);
+            repo = dependency.mainRepository(this);
             logger.accept(4, "Using repository " + repo);
             // Try to apply dependency using explicit repository
             if (applyDependency(dependency, repo, relocations)) {
-                return;
+                return true;
             }
 
             logger.accept(4, "Cannot find dependency from repository, so will be lookup over loaded repositories");
-            // Use iterator to avoid ConcurrentModificationException
-            final Iterator<Repository> iterator = repositories.iterator();
-            while (iterator.hasNext()) {
-                final Repository repository = iterator.next();
+            for (Repository repository : repositories) {
                 // Avoid repeated repo
                 if (repository.equals(repo)) {
                     continue;
                 }
                 if (applyDependency(dependency, repository, relocations)) {
-                    meet = true;
-                    break;
+                    return true;
                 }
             }
-        } catch (RuntimeException ignored) { }
-
-        if (!meet && !dependency.optional) {
-            // Throw exception if dependency is needed
-            throw new RuntimeException("Cannot load dependency " + dependency.path + " from " + repo + " or loaded repositories");
-        } else {
-            logger.accept(1, "Cannot load optional dependency " + dependency.path + " from " + repo + " or loaded repositories");
+        } catch (Exception e) {
+            e.printStackTrace();
         }
+
+        if (dependency.optional) {
+            logger.accept(1, "Cannot load optional dependency " + dependency.path + " from " + repo + " or loaded repositories");
+            return false;
+        }
+        throw new RuntimeException("Cannot load dependency " + dependency.path + " from " + repo + " or loaded repositories");
     }
 
     /**
@@ -532,11 +569,6 @@ public class EzlibLoader {
      * @return            true if dependency was applied correctly.
      */
     public boolean applyDependency(Dependency dependency, Repository repository, Map<String, String> relocations) {
-        if (repository.url.toLowerCase().startsWith("http:") && !repository.allowInsecureProtocol) {
-            logger.accept(1, "The repository " + repository.url + " uses an insecure protocol without explicit option to allow it, so will be removed");
-            repositories.remove(repository);
-            return false;
-        }
         final String[] path = dependency.path.split(":");
         // Check if dependency is snapshot to get file version from maven metadata
         if (dependency.snapshot && !parseSnapshot(path, repository.url)) {
@@ -573,6 +605,9 @@ public class EzlibLoader {
             throw new RuntimeException("Cannot load dependency " + dependency.path + " into class loader after download");
         }
 
+        // Add to applied dependencies
+        applied.add(dependency);
+
         // Check if sub dependencies will be downloaded
         if (!dependency.transitive) {
             return true;
@@ -589,7 +624,7 @@ public class EzlibLoader {
             return true;
         }
         // Download only sub dependencies (using optional comparator and exclusions)
-        applyDependency(dependency, repository, parseDocument(pom));
+        applyDependency(dependency, repository, xmlParser.fromFile(pom));
         return true;
     }
 
@@ -609,51 +644,54 @@ public class EzlibLoader {
         logger.accept(4, "Applying sub-dependencies using pom file...");
         loadRepositories(pom);
 
+        int count = 0;
+        Element element = pom.getDocumentElement();
         // Document path: dependencies.dependency[]
-        NodeList list = pom.getDocumentElement().getChildNodes();
-        for (int i = 0; i < list.getLength(); i++) {
-            Node node = list.item(i);
-            // dependencies
-            if (node.getNodeName().equals("dependencies")) {
-                list = ((Element) node).getElementsByTagName("dependency");
-                for (i = 0; i < list.getLength(); i++) {
-                    node = list.item(i);
-                    String path = elementText((Element) node, "groupId") + ':' + elementText((Element) node, "artifactId") + ':' + elementText((Element) node, "version");
-                    if (dependency.isExcluded(path) || (!dependency.loadOptional && elementText((Element) node, "optional", "false").equals("true"))) {
-                        logger.accept(4, "The sub-dependency " + path + " don't need to be loaded");
-                        continue;
-                    }
-                    Dependency dep = new Dependency().path(path).repository(repository).relocate(dependency.relocate);
-                    if (dependencies.contains(dep)) {
-                        logger.accept(4, "The sub-dependency " + path + " is already loaded");
-                        continue;
-                    }
-                    logger.accept(4, "Trying to apply sub-dependency " + path + " from pom");
-                    applyDependency(dep);
+        for (Element eDependency : xmlParser.getElements(element, "dependencies", "dependency")) {
+            // Parse dependency path
+            String path = parsePath(element, eDependency, false);
+            if (path == null) {
+                logger.accept(4, "The sub-dependency " + (count + 1) + " contains invalid parameters");
+                continue;
+            }
+            // Avoid invalid scopes
+            String scope = xmlParser.getTextContent(element, eDependency, "scope", "compile");
+            if (!dependency.isValidScope(scope)) {
+                logger.accept(4, "The sub-dependency " + path + " scope '" + scope + "' doesn't match with dependency scopes, so will be ignored");
+                continue;
+            }
+            // Avoid excluded or optional dependencies
+            if (dependency.isExcluded(path) || (!dependency.loadOptional && xmlParser.getTextContent(element, eDependency, "optional", "false").equals("true"))) {
+                logger.accept(4, "The sub-dependency " + path + " don't need to be loaded");
+                continue;
+            }
+            // Get exclusions from sub-dependency
+            Set<String> exclusions = new HashSet<>();
+            for (Element exclusion : xmlParser.getElements(eDependency, "exclusions", "exclusion")) {
+                String excludedPath = parsePath(element, exclusion, true);
+                if (excludedPath != null) {
+                    exclusions.add(excludedPath);
                 }
-                break;
+            }
+            // Build sub-dependency with relocations
+            Dependency dep = new Dependency().path(path).relocate(dependency.relocate);
+            if (applied.contains(dep)) {
+                logger.accept(4, "The sub-dependency " + path + " is already applied into class loader");
+                continue;
+            }
+            // Add inherited parameters
+            dep.repository(repository).inner(dependency.inner).optional(dependency.optional).scopes(dependency.scopes).exclude(dependency.exclude);
+            if (dep.exclude != null) {
+                dep.exclude.addAll(exclusions);
+            } else if (!exclusions.isEmpty()) {
+                dep.exclude(exclusions);
+            }
+            logger.accept(4, "Trying to apply sub-dependency " + path + " from pom");
+            if (applyDependency(dep)) {
+                count++;
             }
         }
-    }
-
-    /**
-     * Check if the provided dependency need to be applied testing classes.
-     *
-     * @param dependency the dependency to check.
-     * @return           true if dependency passed the check.
-     */
-    public boolean test(Dependency dependency) {
-        if (dependency.test == null || dependency.test.length < 1) {
-            return false;
-        }
-        boolean meet = true;
-        for (String name : dependency.test) {
-            if (!test(name, dependency.inner)) {
-                meet = false;
-                break;
-            }
-        }
-        return meet;
+        logger.accept(4, "Applied " + count + " sub-dependenc" + (count == 1 ? "y" : "ies") + " from pom");
     }
 
     /**
@@ -688,10 +726,10 @@ public class EzlibLoader {
     /**
      * Evaluate the provided custom conditions.
      *
-     * @param conditions an array with all the custom conditions.
+     * @param conditions a collection with all the custom conditions.
      * @return           true the conditions doesn't exist or was evaluated as true.
      */
-    public boolean eval(String... conditions) {
+    public boolean eval(Collection<String> conditions) {
         if (conditions == null) {
             return true;
         }
@@ -720,6 +758,9 @@ public class EzlibLoader {
      * @return  the parsed String.
      */
     public String parse(String s) {
+        if (s == null) {
+            return null;
+        }
         String str = s;
         for (Map.Entry<String, String> entry : replaces.entrySet()) {
             str = str.replace(entry.getKey(), entry.getValue());
@@ -727,30 +768,24 @@ public class EzlibLoader {
         return str;
     }
 
-    private Document parseDocument(String url) {
-        try {
-            URLConnection con = new URL(url).openConnection();
-            con.addRequestProperty("Accept", "application/xml");
-            return docBuilder.parse(con.getInputStream());
-        } catch (IOException | SAXException e) {
+    private Map<String, String> parse(Map<String, String> map) {
+        if (map == null) {
             return null;
         }
-    }
-
-    private Document parseDocument(File file) {
-        try {
-            return docBuilder.parse(file.toURI().toURL().openStream());
-        } catch (IOException | SAXException e) {
-            return null;
+        final Map<String, String> finalMap = new HashMap<>();
+        for (Map.Entry<String, String> entry : map.entrySet()) {
+            finalMap.put(parse(entry.getKey()), parse(entry.getValue()));
         }
+        return finalMap;
     }
     
     private boolean parseSnapshot(String[] path, String repository) {
-        Document ver = parseDocument(ezlib.parseRepository(repository) + path[0] + '/' + path[1] + '/' + path[2] + "/maven-metadata.xml");
+        Document ver = xmlParser.fromUrl(ezlib.parseRepository(repository) + path[0] + '/' + path[1] + '/' + path[2] + "/maven-metadata.xml");
         if (ver == null) {
             return false;
         }
-        String snapshot = elementText(ver.getDocumentElement(), "versioning.snapshotVersions.snapshotVersion.value");
+        final Element element = ver.getDocumentElement();
+        String snapshot = xmlParser.getTextContent(element, element, "versioning.snapshotVersions.snapshotVersion.value");
         if (snapshot == null) {
             return false;
         }
@@ -758,23 +793,24 @@ public class EzlibLoader {
         return true;
     }
 
-    private Repository parseRepository(Dependency dependency) {
-        if (dependency.repository != null) {
-            if (dependency.repository.url != null && !dependency.repository.url.isEmpty()) {
-                return dependency.repository;
+    private String parsePath(Element document, Element dependency, boolean acceptInvalid) {
+        String groupId = xmlParser.getTextContent(document, dependency, "groupId");
+        String artifactId = xmlParser.getTextContent(document, dependency, "artifactId");
+        String version = xmlParser.getTextContent(document, dependency, "version");
+        if (acceptInvalid) {
+            if (isInvalid(groupId)) {
+                return null;
             }
-            if (dependency.repository.name != null && !dependency.repository.name.isEmpty()) {
-                for (Repository repository : repositories) {
-                    if (repository.equals(dependency.repository)) {
-                        return repository;
-                    }
-                }
+            if (isInvalid(artifactId)) {
+                return groupId;
+            } else {
+                return groupId + ":" + artifactId + (isInvalid(version) ? "" : ":" + version);
             }
         }
-        for (Repository repository : repositories) {
-            return repository;
+        if (isInvalid(groupId) || isInvalid(artifactId) || isInvalid(version)) {
+            return null;
         }
-        return new Repository().url("https://repo.maven.apache.org/maven2/");
+        return groupId + ':' + artifactId + ':' + version;
     }
 
     private static Map<String, String> parseRelocations(String... relocations) {
@@ -797,7 +833,8 @@ public class EzlibLoader {
             final ParameterizedType paramType = (ParameterizedType) type;
             if (paramType.getActualTypeArguments().length == params.length) {
                 for (int i = 0; i < params.length; i++) {
-                    if (!params[i].isAssignableFrom((Class<?>) paramType.getActualTypeArguments()[i])) {
+                    final Class<?> actualParam = (Class<?>) paramType.getActualTypeArguments()[i];
+                    if (!params[i].isAssignableFrom(actualParam) || params[i] != actualParam) {
                         return false;
                     }
                 }
@@ -807,52 +844,185 @@ public class EzlibLoader {
         return false;
     }
 
-    private static String elementText(Element element, String path) {
-        return elementText(element, path, null);
+    private static boolean isInvalid(String s) {
+        return s == null || s.trim().isEmpty() || s.equals("null") || s.equals("*");
     }
 
-    private static String elementText(Element element, String path, String def) {
-        final String[] keys = path.split("\\.");
-        Element node = element;
-        for (int i = 0; i < keys.length; i++) {
-            String key = keys[i];
-            NodeList list = node.getChildNodes();
-            boolean found = false;
-            for (int i1 = 0; i1 < list.getLength(); i1++) {
-                Node n = list.item(i1);
-                if (n.getNodeName().equals(key)) {
-                    if (n instanceof Element) {
-                        node = (Element) n;
-                        found = true;
-                        break;
-                    }
-                    if (i + 1 >= keys.length) {
-                        return n.getTextContent();
-                    } else {
-                        return def;
-                    }
-                }
-            }
-            if (found) {
-                continue;
-            }
-            list = node.getElementsByTagName(key);
-            if (list.getLength() > 0) {
-                Node n = list.item(0);
-                if (n instanceof Element) {
-                    node = (Element) n;
-                    continue;
-                }
-                if (i + 1 >= keys.length) {
-                    return n.getTextContent();
-                } else {
-                    return def;
-                }
-            } else {
-                return def;
+    /**
+     * The XML parser to handle documents.
+     */
+    public static class XmlParser {
+        private final DocumentBuilder docBuilder;
+
+        /**
+         * Constructs a XML parser with default document builder.
+         */
+        public XmlParser() {
+            this(defaultBuilder());
+        }
+
+        /**
+         * Consturcts a XML parser with provided document builder.
+         *
+         * @param docBuilder the document builder to use.
+         */
+        public XmlParser(DocumentBuilder docBuilder) {
+            this.docBuilder = docBuilder;
+        }
+
+        private static DocumentBuilder defaultBuilder() {
+            try {
+                DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+                factory.setFeature("http://xml.org/sax/features/validation", false);
+                factory.setFeature("http://apache.org/xml/features/nonvalidating/load-dtd-grammar", false);
+                factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+                return factory.newDocumentBuilder();
+            } catch (ParserConfigurationException e) {
+                throw new RuntimeException("Cannot initialize document builder", e);
             }
         }
-        return node.getTextContent();
+
+        /**
+         * Get document from URL.
+         *
+         * @param url the URL to connect.
+         * @return     a parsed document from URL or null.
+         */
+        public Document fromUrl(String url) {
+            try {
+                URLConnection con = new URL(url).openConnection();
+                con.addRequestProperty("Accept", "application/xml");
+                return docBuilder.parse(con.getInputStream());
+            } catch (IOException | SAXException e) {
+                return null;
+            }
+        }
+
+        /**
+         * Get document from file.
+         *
+         * @param file the file to parse.
+         * @return     the provided file as document or null.
+         */
+        public Document fromFile(File file) {
+            try {
+                return docBuilder.parse(file.toURI().toURL().openStream());
+            } catch (IOException | SAXException e) {
+                return null;
+            }
+        }
+
+        /**
+         * Get node from element at provided path separated by dot.
+         *
+         * @param element the element to see.
+         * @param path    the path separated by dot.
+         * @return        a node from provided path or null.
+         */
+        public Node getNode(Element element, String path) {
+            final String[] keys = path.split("\\.");
+            Element node = element;
+            for (int i = 0; i < keys.length; i++) {
+                String key = keys[i];
+                NodeList list = node.getChildNodes();
+                boolean found = false;
+                for (int i1 = 0; i1 < list.getLength(); i1++) {
+                    Node n = list.item(i1);
+                    if (n.getNodeName().equals(key)) {
+                        if (n instanceof Element) {
+                            node = (Element) n;
+                            found = true;
+                            break;
+                        }
+                        if (i + 1 >= keys.length) {
+                            return n;
+                        } else {
+                            return null;
+                        }
+                    }
+                }
+                if (found) {
+                    continue;
+                }
+                list = node.getElementsByTagName(key);
+                if (list.getLength() > 0) {
+                    Node n = list.item(0);
+                    if (n instanceof Element) {
+                        node = (Element) n;
+                        continue;
+                    }
+                    if (i + 1 >= keys.length) {
+                        return n;
+                    } else {
+                        return null;
+                    }
+                } else {
+                    return null;
+                }
+            }
+            return node;
+        }
+
+        /**
+         * Get element list from provided element path by tag name.
+         *
+         * @param element the element to see.
+         * @param path    the path separated by dot.
+         * @param tag     the tag name to match elements.
+         * @return        a list containing all the found nodes.
+         */
+        public List<Element> getElements(Element element, String path, String tag) {
+            final List<Element> elements = new ArrayList<>();
+            Node node = getNode(element, path);
+            if (!(node instanceof Element)) {
+                return elements;
+            }
+            NodeList list = ((Element) node).getElementsByTagName(tag);
+            for (int i = 0; i < list.getLength(); i++) {
+                node = list.item(i);
+                if (node instanceof Element) {
+                    elements.add((Element) node);
+                }
+            }
+            return elements;
+        }
+
+        /**
+         * Get text content from element path.
+         *
+         * @param document the full document if the text content have any node variable to parse.
+         * @param element  the element to see.
+         * @param path     the path separated by dot.
+         * @return         a parsed string representing the found text from node at path or null.
+         */
+        public String getTextContent(Element document, Element element, String path) {
+            return getTextContent(document, element, path, null);
+        }
+
+        /**
+         * Get text content from element path or use default value if node don't exists.
+         *
+         * @param document the full document if the text content have any node variable to parse.
+         * @param element  the element to see.
+         * @param path     the path separated by dot.
+         * @param def      the default text.
+         * @return         a parsed string representing the found text from node at path or null.
+         */
+        public String getTextContent(Element document, Element element, String path, String def) {
+            Node node = getNode(element, path);
+            if (node == null) {
+                return def;
+            }
+            String s = node.getTextContent();
+            if (s == null) {
+                return null;
+            }
+            final Matcher matcher = NODE_VARIABLE.matcher(s);
+            while (matcher.find()) {
+                s = matcher.replaceFirst(String.valueOf(getTextContent(document, document, matcher.group(1))));
+            }
+            return s;
+        }
     }
 
     /**
@@ -864,21 +1034,45 @@ public class EzlibLoader {
         private String format = "%group%/%artifact%/%version%/%artifact%-%fileVersion%.%fileType%";
         private boolean allowInsecureProtocol;
 
+        /**
+         * Set the repostory unique name.
+         *
+         * @param name the repository name to compare with other repositories.
+         * @return     the current repository object.
+         */
         public Repository name(String name) {
             this.name = name;
             return this;
         }
 
+        /**
+         * Set the repositoru url.
+         *
+         * @param url the url to download dependencies from it.
+         * @return    the current repository object.
+         */
         public Repository url(String url) {
             this.url = url;
             return this;
         }
 
+        /**
+         * Set the repository url format.
+         *
+         * @param format thr url format used to download dependencies.
+         * @return       the current repository object.
+         */
         public Repository format(String format) {
             this.format = format;
             return this;
         }
 
+        /**
+         * Change the insecure protocol handling.
+         *
+         * @param allowInsecureProtocol true to allow connections to insecure url protocol.
+         * @return                      the current repository object.
+         */
         public Repository allowInsecureProtocol(boolean allowInsecureProtocol) {
             this.allowInsecureProtocol = allowInsecureProtocol;
             return this;
@@ -895,7 +1089,12 @@ public class EzlibLoader {
             if (o == null || getClass() != o.getClass()) return false;
 
             Repository repo = (Repository) o;
-            return name != null ? name.equals(repo.name) : Objects.equals(url, repo.url);
+            return name != null && repo.name != null ? name.equals(repo.name) : Objects.equals(url, repo.url);
+        }
+
+        @Override
+        public int hashCode() {
+            return name != null ? name.hashCode() : (url != null ? url.hashCode() : 0);
         }
     }
 
@@ -910,9 +1109,10 @@ public class EzlibLoader {
         private boolean snapshot;
         private boolean loadOptional;
         private boolean optional;
-        private String[] test;
-        private String[] condition;
-        private String[] exclude;
+        private Set<String> scopes;
+        private Set<String> test;
+        private Set<String> condition;
+        private Set<String> exclude;
         private Map<String, String> relocate;
 
         /**
@@ -927,7 +1127,7 @@ public class EzlibLoader {
         }
 
         /**
-         * Set the dependency main repository main.
+         * Set the dependency main repository url.
          *
          * @param repository the repository url.
          * @return           the current dependency object.
@@ -1003,12 +1203,43 @@ public class EzlibLoader {
         }
 
         /**
+         * Set the used scopes to download sub dependencies.
+         *
+         * @param scopes an array of scopes names.
+         * @return       the current dependency object.
+         */
+        public Dependency scopes(String... scopes) {
+            return scopes(Arrays.stream(scopes).collect(Collectors.toSet()));
+        }
+
+        /**
+         * Set the used scopes to download sub dependencies.
+         *
+         * @param scopes a set of scopes names.
+         * @return       the current dependency object.
+         */
+        public Dependency scopes(Set<String> scopes) {
+            this.scopes = scopes;
+            return this;
+        }
+
+        /**
          * Set the classes test.
          *
          * @param test an array of class name test.
          * @return     the current dependency object.
          */
         public Dependency test(String... test) {
+            return test(Arrays.stream(test).collect(Collectors.toSet()));
+        }
+
+        /**
+         * Set the classes test.
+         *
+         * @param test a set of class name test.
+         * @return     the current dependency object.
+         */
+        public Dependency test(Set<String> test) {
             this.test = test;
             return this;
         }
@@ -1020,6 +1251,16 @@ public class EzlibLoader {
          * @return          the current dependency object.
          */
         public Dependency condition(String[] condition) {
+            return condition(Arrays.stream(condition).collect(Collectors.toSet()));
+        }
+
+        /**
+         * Set the custom conditions.
+         *
+         * @param condition conditions set.
+         * @return          the current dependency object.
+         */
+        public Dependency condition(Set<String> condition) {
             this.condition = condition;
             return this;
         }
@@ -1031,6 +1272,16 @@ public class EzlibLoader {
          * @return        the current dependency object.
          */
         public Dependency exclude(String... exclude) {
+            return exclude(Arrays.stream(exclude).collect(Collectors.toSet()));
+        }
+
+        /**
+         * Set the exclusions.
+         *
+         * @param exclude dependency paths exclusions.
+         * @return        the current dependency object.
+         */
+        public Dependency exclude(Set<String> exclude) {
             this.exclude = exclude;
             return this;
         }
@@ -1056,13 +1307,55 @@ public class EzlibLoader {
             return this;
         }
 
-        /**
-         * Check if the provided dependency path is excluded in this dependency information.
-         *
-         * @param path the dependency path to check.
-         * @return     true if the path is excluded.
-         */
-        public boolean isExcluded(String path) {
+        private Repository mainRepository(EzlibLoader loader) {
+            // Find any valid repository
+            if (repository != null) {
+                // Using url
+                if (repository.url != null && !repository.url.isEmpty()) {
+                    return repository;
+                }
+                // Using name
+                if (repository.name != null && !repository.name.isEmpty()) {
+                    for (Repository repo : loader.repositories) {
+                        if (repo.equals(repository)) {
+                            return repo;
+                        }
+                    }
+                }
+            }
+            // Return first repository
+            for (Repository repo : loader.repositories) {
+                return repo;
+            }
+            // Return default repository
+            return new Repository().url(loader.ezlib.getDefaultRepository());
+        }
+
+        private boolean meetTest(EzlibLoader loader) {
+            if (test == null || test.isEmpty()) {
+                return false;
+            }
+            boolean meet = true;
+            for (String name : test) {
+                if (!loader.test(name, inner)) {
+                    meet = false;
+                    break;
+                }
+            }
+            return meet;
+        }
+
+        private boolean isValidScope(String name) {
+            if (name == null) {
+                return false;
+            }
+            if (scopes == null) {
+                return name.equalsIgnoreCase("runtime") || name.equalsIgnoreCase("compile");
+            }
+            return scopes.contains(name.toLowerCase());
+        }
+
+        private boolean isExcluded(String path) {
             if (exclude != null) {
                 for (String s : exclude) {
                     if (path.startsWith(s)) {
@@ -1083,9 +1376,10 @@ public class EzlibLoader {
                     ", snapshot=" + snapshot +
                     ", loadOptional=" + loadOptional +
                     ", optional=" + optional +
-                    ", test=" + Arrays.toString(test) +
-                    ", condition=" + Arrays.toString(condition) +
-                    ", exclude=" + Arrays.toString(exclude) +
+                    ", scopes=" + scopes +
+                    ", test=" + test +
+                    ", condition=" + condition +
+                    ", exclude=" + exclude +
                     ", relocate=" + relocate +
                     '}';
         }
@@ -1101,6 +1395,13 @@ public class EzlibLoader {
                 return Objects.equals(path, that.path) && that.relocate == null;
             }
             return Objects.equals(path, that.path) && (that.relocate == null ? relocate.isEmpty() : relocate.equals(that.relocate));
+        }
+
+        @Override
+        public int hashCode() {
+            int result = path != null ? path.hashCode() : 0;
+            result = 31 * result + (relocate != null && !relocate.isEmpty() ? relocate.hashCode() : 0);
+            return result;
         }
     }
 
