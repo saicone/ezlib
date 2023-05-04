@@ -43,8 +43,8 @@ public class EzlibLoader {
     private XmlParser xmlParser;
 
     // Loadable objects
-    private final Set<Repository> repositories = new HashSet<>();
-    private final Set<Dependency> dependencies = new HashSet<>();
+    private final List<Repository> repositories = new ArrayList<>();
+    private final List<Dependency> dependencies = new ArrayList<>();
     private final Map<String, String> relocations = new HashMap<>();
     private final Map<String, Predicate<String>> conditions = new HashMap<>();
     private final Set<Dependency> applied = new HashSet<>();
@@ -130,7 +130,7 @@ public class EzlibLoader {
      * @return          the current ezlib loader.
      */
     public EzlibLoader condition(String key, Predicate<String> predicate) {
-        conditions.put(key, predicate);
+        conditions.put(key.toLowerCase(), predicate);
         return this;
     }
 
@@ -203,6 +203,15 @@ public class EzlibLoader {
      */
     public Ezlib getEzlib() {
         return ezlib;
+    }
+
+    /**
+     * Get the actual XML parser instance.
+     *
+     * @return the XML parser instance.
+     */
+    public XmlParser getXmlParser() {
+        return xmlParser;
     }
 
     /**
@@ -294,8 +303,9 @@ public class EzlibLoader {
         // Apply all loaded dependencies using global parameters
         logger.accept(3, "Applying all dependencies...");
         int count = 0;
-        for (Dependency dependency : dependencies) {
-            if (applyDependency(dependency)) {
+        // Avoid ConcurrentModificationException
+        for (int i = 0; i < dependencies.size(); i++) {
+            if (applyDependency(dependencies.get(i))) {
                 count++;
             }
         }
@@ -413,7 +423,9 @@ public class EzlibLoader {
             repositories.remove(repository);
             return;
         }
-        this.repositories.add(repository);
+        if (!this.repositories.contains(repository)) {
+            this.repositories.add(repository);
+        }
     }
 
     /**
@@ -438,7 +450,7 @@ public class EzlibLoader {
     public void loadRepositories(Document pom) {
         // Document path: repositories.repository.url
         Element element = pom.getDocumentElement();
-        for (Element repository : xmlParser.getElements(element, "repositories", "repository")) {
+        for (Element repository : xmlParser.getElements(element, "repository", "repositories")) {
             String url = xmlParser.getTextContent(element, repository, "url");
             if (url != null) {
                 loadRepository(new Repository().url(url));
@@ -466,7 +478,13 @@ public class EzlibLoader {
                 dependency.relocate = null;
             }
         }
-        this.dependencies.add(dependency);
+        // Add repository to loaded repositories
+        if (dependency.repository != null && dependency.repository.url != null) {
+            loadRepository(dependency.repository);
+        }
+        if (!this.dependencies.contains(dependency)) {
+            this.dependencies.add(dependency);
+        }
     }
 
     /**
@@ -540,7 +558,9 @@ public class EzlibLoader {
             }
 
             logger.accept(4, "Cannot find dependency from repository, so will be lookup over loaded repositories");
-            for (Repository repository : repositories) {
+            // Avoid ConcurrentModificationException
+            for (int i = 0; i < repositories.size(); i++) {
+                final Repository repository = repositories.get(i);
                 // Avoid repeated repo
                 if (repository.equals(repo)) {
                     continue;
@@ -570,23 +590,46 @@ public class EzlibLoader {
      */
     public boolean applyDependency(Dependency dependency, Repository repository, Map<String, String> relocations) {
         final String[] path = dependency.path.split(":");
+        // Check if dependency uses version path and get it from maven metadata
+        Dependency modified = null;
+        if (path[2].charAt(0) == '@' && parseVersionPath(path, repository.url)) {
+            modified = new Dependency().path(String.join(":", path)).relocate(dependency.relocate);
+        }
         // Check if dependency is snapshot to get file version from maven metadata
-        if (dependency.snapshot && !parseSnapshot(path, repository.url)) {
-            logger.accept(2, "Dependency is marked has snapshot, but cannot find snapshot version from repository");
+        final boolean lookSnapshot = dependency.snapshot;
+        final boolean hasFileVersion = path[2].indexOf('@') > 0;
+        if (lookSnapshot && !hasFileVersion) {
+            if (parseSnapshot(path, repository.url)) {
+                modified = new Dependency().path(String.join(":", path)).relocate(dependency.relocate);
+            } else {
+                logger.accept(2, "Dependency is marked has snapshot, but cannot find snapshot version from repository: " + repository);
+            }
+        }
+
+        // Ignore modified dependency if it was applied before
+        if (modified != null && applied.contains(modified)) {
+            logger.accept(4, "The dependency " + modified.path + " is already applied into class loader");
+            return true;
         }
 
         // Download dependency jar file
         File file;
         try {
-            // Try to download or use downloaded JAR
+            // Try to download or use pre-downloaded JAR
             file = ezlib.download(String.join(":", path), repository.url, repository.format.replace("%fileType%", "jar"));
         } catch (IOException e) {
-            if (dependency.snapshot) {
+            if (lookSnapshot || hasFileVersion) {
                 logger.accept(4, "Cannot find dependency from " + repository.url);
                 return false;
             }
             // Try to find snapshot if isn't configured previously
             if (parseSnapshot(path, repository.url)) {
+                modified = new Dependency().path(String.join(":", path)).relocate(dependency.relocate);
+                // Ignore modified dependency if it was applied before
+                if (applied.contains(modified)) {
+                    logger.accept(4, "The dependency " + modified.path + " is already applied into class loader");
+                    return true;
+                }
                 try {
                     // If snapshot is found try to re-download
                     file = ezlib.download(String.join(":", path), repository.url, repository.format.replace("%fileType%", "jar"));
@@ -607,6 +650,10 @@ public class EzlibLoader {
 
         // Add to applied dependencies
         applied.add(dependency);
+        if (modified != null) {
+            // Add modified dependency too
+            applied.add(modified);
+        }
 
         // Check if sub dependencies will be downloaded
         if (!dependency.transitive) {
@@ -647,7 +694,7 @@ public class EzlibLoader {
         int count = 0;
         Element element = pom.getDocumentElement();
         // Document path: dependencies.dependency[]
-        for (Element eDependency : xmlParser.getElements(element, "dependencies", "dependency")) {
+        for (Element eDependency : xmlParser.getElements(element, "dependency", "dependencies")) {
             // Parse dependency path
             String path = parsePath(element, eDependency, false);
             if (path == null) {
@@ -655,19 +702,19 @@ public class EzlibLoader {
                 continue;
             }
             // Avoid invalid scopes
-            String scope = xmlParser.getTextContent(element, eDependency, "scope", "compile");
+            String scope = xmlParser.getTextContentOrDefault(element, eDependency, "compile", "scope");
             if (!dependency.isValidScope(scope)) {
                 logger.accept(4, "The sub-dependency " + path + " scope '" + scope + "' doesn't match with dependency scopes, so will be ignored");
                 continue;
             }
             // Avoid excluded or optional dependencies
-            if (dependency.isExcluded(path) || (!dependency.loadOptional && xmlParser.getTextContent(element, eDependency, "optional", "false").equals("true"))) {
+            if (dependency.isExcluded(path) || (!dependency.loadOptional && xmlParser.getTextContentOrDefault(element, eDependency, "false", "optional").equals("true"))) {
                 logger.accept(4, "The sub-dependency " + path + " don't need to be loaded");
                 continue;
             }
             // Get exclusions from sub-dependency
             Set<String> exclusions = new HashSet<>();
-            for (Element exclusion : xmlParser.getElements(eDependency, "exclusions", "exclusion")) {
+            for (Element exclusion : xmlParser.getElements(eDependency, "exclusion", "exclusions")) {
                 String excludedPath = parsePath(element, exclusion, true);
                 if (excludedPath != null) {
                     exclusions.add(excludedPath);
@@ -677,6 +724,10 @@ public class EzlibLoader {
             Dependency dep = new Dependency().path(path).relocate(dependency.relocate);
             if (applied.contains(dep)) {
                 logger.accept(4, "The sub-dependency " + path + " is already applied into class loader");
+                continue;
+            }
+            if (dependencies.contains(dep)) {
+                logger.accept(4, "The sub-dependency " + path + " is already defined in loaded dependencies");
                 continue;
             }
             // Add inherited parameters
@@ -738,10 +789,10 @@ public class EzlibLoader {
             final String key;
             final String value;
             if (index > 0 && index + 1 < condition.length()) {
-                key = condition.substring(0, index);
+                key = condition.substring(0, index).toLowerCase();
                 value = condition.substring(index + 1);
             } else {
-                key = condition;
+                key = condition.toLowerCase();
                 value = "";
             }
             if (this.conditions.containsKey(key) && !this.conditions.get(key).test(value)) {
@@ -778,16 +829,61 @@ public class EzlibLoader {
         }
         return finalMap;
     }
-    
-    private boolean parseSnapshot(String[] path, String repository) {
-        Document ver = xmlParser.fromUrl(ezlib.parseRepository(repository) + path[0] + '/' + path[1] + '/' + path[2] + "/maven-metadata.xml");
+
+    private boolean parseVersionPath(String[] path, String repository) {
+        final String url = ezlib.parseRepository(repository) + path[0].replace(".", "/") + '/' + path[1] + "/maven-metadata.xml";
+        final Document ver = xmlParser.fromUrl(url);
         if (ver == null) {
             return false;
         }
         final Element element = ver.getDocumentElement();
-        String snapshot = xmlParser.getTextContent(element, element, "versioning.snapshotVersions.snapshotVersion.value");
-        if (snapshot == null) {
+        final Element versioning = xmlParser.getElement(element, "versioning");
+        if (versioning == null) {
+            logger.accept(4, "The versioning node is null from " + url);
             return false;
+        }
+        final String[] split = path[2].substring(1).split("\\.");
+        for (int i = 0; i < split.length; i++) {
+            split[i] = split[i].replace("<dot>", ".");
+        }
+        final String text = xmlParser.getTextContent(element, versioning, split);
+        if (text == null) {
+            logger.accept(2, "Cannot find versioning content at path '" + path[2].substring(1) + "' from " + url);
+            return false;
+        }
+        path[2] = text;
+        return true;
+    }
+    
+    private boolean parseSnapshot(String[] path, String repository) {
+        final String url = ezlib.parseRepository(repository) + path[0].replace(".", "/") + '/' + path[1] + '/' + path[2] + "/maven-metadata.xml";
+        final Document ver = xmlParser.fromUrl(url);
+        if (ver == null) {
+            return false;
+        }
+        final Element element = ver.getDocumentElement();
+        final Element versioning = xmlParser.getElement(element, "versioning");
+        if (versioning == null) {
+            logger.accept(2, "The versioning node is null from " + url);
+            return false;
+        }
+        // Try to get snapshot from "snapshotVersions.snapshotVersion.value" path
+        String snapshot = xmlParser.getTextContent(element, versioning, "snapshotVersions", "snapshotVersion", "value");
+        if (snapshot != null) {
+            path[2] = path[2] + '@' + snapshot;
+            return true;
+        }
+        // Try to parse snapshot version using snapshot information
+        final String timestamp = xmlParser.getTextContent(element, versioning, "snapshot", "timestamp");
+        final String buildNumber = xmlParser.getTextContent(element, versioning, "snapshot", "buildNumber");
+        if (timestamp == null || buildNumber == null) {
+            logger.accept(2, "Cannot get snapshot information from " + url + " after looking for snapshot versions");
+            return false;
+        }
+        if (path[2].endsWith("-SNAPSHOT")) {
+            snapshot = path[2].substring(0, path[2].length() - 9) + '-' + timestamp + '-' + buildNumber;
+        } else {
+            snapshot = path[2] + '-' + timestamp + '-' + buildNumber;
         }
         path[2] = path[2] + '@' + snapshot;
         return true;
@@ -913,28 +1009,29 @@ public class EzlibLoader {
         }
 
         /**
-         * Get node from element at provided path separated by dot.
+         * Get node from element at provided path.
          *
          * @param element the element to see.
-         * @param path    the path separated by dot.
+         * @param path    the key path.
          * @return        a node from provided path or null.
          */
-        public Node getNode(Element element, String path) {
-            final String[] keys = path.split("\\.");
+        public Node getNode(Element element, String... path) {
             Element node = element;
-            for (int i = 0; i < keys.length; i++) {
-                String key = keys[i];
+            for (int i = 0; i < path.length; i++) {
+                String key = path[i];
+                // Try to get from child nodes
                 NodeList list = node.getChildNodes();
                 boolean found = false;
                 for (int i1 = 0; i1 < list.getLength(); i1++) {
                     Node n = list.item(i1);
+                    // Compare name with key
                     if (n.getNodeName().equals(key)) {
                         if (n instanceof Element) {
                             node = (Element) n;
                             found = true;
                             break;
                         }
-                        if (i + 1 >= keys.length) {
+                        if (i + 1 >= path.length) {
                             return n;
                         } else {
                             return null;
@@ -944,14 +1041,34 @@ public class EzlibLoader {
                 if (found) {
                     continue;
                 }
+                // Try to get from node list
                 list = node.getElementsByTagName(key);
                 if (list.getLength() > 0) {
-                    Node n = list.item(0);
+                    Node n;
+                    if (i + 1 < path.length) {
+                        // Try to find index from next key
+                        String nextKey = path[i + 1];
+                        if (nextKey.equals("-1")) {
+                            // Latest index
+                            n = list.item(list.getLength() - 1);
+                            i++;
+                        } else {
+                            try {
+                                // Index number
+                                n = list.item(Integer.parseInt(nextKey));
+                                i++;
+                            } catch (NumberFormatException e) {
+                                n = list.item(0);
+                            }
+                        }
+                    } else {
+                        n = list.item(0);
+                    }
                     if (n instanceof Element) {
                         node = (Element) n;
                         continue;
                     }
-                    if (i + 1 >= keys.length) {
+                    if (i + 1 >= path.length) {
                         return n;
                     } else {
                         return null;
@@ -964,17 +1081,29 @@ public class EzlibLoader {
         }
 
         /**
+         * Get element inside element at provided path.
+         *
+         * @param element the element to see.
+         * @param path    the key path.
+         * @return        a element from provided path or null.
+         */
+        public Element getElement(Element element, String... path) {
+            final Node node = getNode(element, path);
+            return node instanceof Element ? (Element) node : null;
+        }
+
+        /**
          * Get element list from provided element path by tag name.
          *
          * @param element the element to see.
-         * @param path    the path separated by dot.
          * @param tag     the tag name to match elements.
+         * @param path    the key path.
          * @return        a list containing all the found nodes.
          */
-        public List<Element> getElements(Element element, String path, String tag) {
+        public List<Element> getElements(Element element, String tag, String... path) {
             final List<Element> elements = new ArrayList<>();
-            Node node = getNode(element, path);
-            if (!(node instanceof Element)) {
+            Node node = getElement(element, path);
+            if (node == null) {
                 return elements;
             }
             NodeList list = ((Element) node).getElementsByTagName(tag);
@@ -992,11 +1121,11 @@ public class EzlibLoader {
          *
          * @param document the full document if the text content have any node variable to parse.
          * @param element  the element to see.
-         * @param path     the path separated by dot.
+         * @param path     the key path.
          * @return         a parsed string representing the found text from node at path or null.
          */
-        public String getTextContent(Element document, Element element, String path) {
-            return getTextContent(document, element, path, null);
+        public String getTextContent(Element document, Element element, String... path) {
+            return getTextContentOrDefault(document, element, null, path);
         }
 
         /**
@@ -1004,11 +1133,11 @@ public class EzlibLoader {
          *
          * @param document the full document if the text content have any node variable to parse.
          * @param element  the element to see.
-         * @param path     the path separated by dot.
          * @param def      the default text.
+         * @param path     the key path.
          * @return         a parsed string representing the found text from node at path or null.
          */
-        public String getTextContent(Element document, Element element, String path, String def) {
+        public String getTextContentOrDefault(Element document, Element element, String def, String... path) {
             Node node = getNode(element, path);
             if (node == null) {
                 return def;
@@ -1019,7 +1148,20 @@ public class EzlibLoader {
             }
             final Matcher matcher = NODE_VARIABLE.matcher(s);
             while (matcher.find()) {
-                s = matcher.replaceFirst(String.valueOf(getTextContent(document, document, matcher.group(1))));
+                String match = matcher.group(1);
+                if (!match.startsWith("project.") && !match.startsWith("pom.")) {
+                    // Try to find at properties path
+                    final String result = getTextContent(document, document, "properties", match);
+                    if (result != null) {
+                        s = matcher.replaceFirst(result);
+                        continue;
+                    }
+                } else {
+                    // Remove unused prefix
+                    match = match.substring(match.indexOf('.') + 1);
+                }
+                // Find at path
+                s = matcher.replaceFirst(String.valueOf(getTextContent(document, document, match.split("\\."))));
             }
             return s;
         }
@@ -1089,7 +1231,7 @@ public class EzlibLoader {
             if (o == null || getClass() != o.getClass()) return false;
 
             Repository repo = (Repository) o;
-            return name != null && repo.name != null ? name.equals(repo.name) : Objects.equals(url, repo.url);
+            return name != null && repo.name != null ? name.equalsIgnoreCase(repo.name) : Objects.equals(url, repo.url);
         }
 
         @Override
@@ -1317,7 +1459,7 @@ public class EzlibLoader {
                 // Using name
                 if (repository.name != null && !repository.name.isEmpty()) {
                     for (Repository repo : loader.repositories) {
-                        if (repo.equals(repository)) {
+                        if (repository.name.equalsIgnoreCase(repo.name)) {
                             return repo;
                         }
                     }
@@ -1335,14 +1477,12 @@ public class EzlibLoader {
             if (test == null || test.isEmpty()) {
                 return false;
             }
-            boolean meet = true;
             for (String name : test) {
                 if (!loader.test(name, inner)) {
-                    meet = false;
-                    break;
+                    return false;
                 }
             }
-            return meet;
+            return true;
         }
 
         private boolean isValidScope(String name) {
@@ -1483,9 +1623,9 @@ public class EzlibLoader {
          */
         public void load(EzlibLoader loader) {
             loader.logger.accept(4, "Loading Dependencies into EzlibLoader");
+            loader.loadRelocations(relocations);
             loader.loadRepositories(repositories);
             loader.loadDependencies(dependencies);
-            loader.loadRelocations(relocations);
         }
     }
 }
