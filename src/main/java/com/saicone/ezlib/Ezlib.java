@@ -490,7 +490,10 @@ public class Ezlib {
          * @throws ClassNotFoundException if cannot find the required classes to initialize.
          */
         public Loader() throws ClassNotFoundException {
-            this(Class.forName(GROUP + ".EzlibAppender", true, publicClassLoader), Class.forName(GROUP + ".EzlibRelocator", true, publicClassLoader));
+            this(
+                    Class.forName(GROUP + ".internal11.EzlibAppender", true, publicClassLoader),
+                    Class.forName(GROUP + ".internal11.EzlibRelocator", true, publicClassLoader)
+            );
         }
 
         /**

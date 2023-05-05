@@ -21,6 +21,7 @@ jar {
 
 shadowJar {
     archiveClassifier.set('')
+    relocate project.group.toString(), project.group + '.internal11'
     relocate 'org.objectweb.asm', project.group + '.asm92'
     relocate 'me.lucko.jarrelocator', project.group + '.relocator16'
 }
