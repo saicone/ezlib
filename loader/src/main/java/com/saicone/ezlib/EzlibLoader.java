@@ -33,6 +33,20 @@ import java.util.stream.Collectors;
 public class EzlibLoader {
 
     private static final Pattern NODE_VARIABLE = Pattern.compile("\\$\\{([^}]+)}");
+    private static final boolean USE_ANNOTATIONS;
+
+    static {
+        boolean useAnnotations;
+        try {
+            Class.forName("com.saicone.ezlib.Repository");
+            Class.forName("com.saicone.ezlib.Dependency");
+            Class.forName("com.saicone.ezlib.Dependencies");
+            useAnnotations = true;
+        } catch (ClassNotFoundException e) {
+            useAnnotations = false;
+        }
+        USE_ANNOTATIONS = useAnnotations;
+    }
 
     // Loader parameters
     private final ClassLoader classLoader;
@@ -55,59 +69,130 @@ public class EzlibLoader {
     private final Map<String, BiConsumer<Reader, EzlibLoader>> fileReaders = new HashMap<>();
 
     /**
-     * Constructs an EzlibLoader using default configuration.
+     * Constructs an EzlibLoader.
      */
     public EzlibLoader() {
         this("ezlib-dependencies.json");
     }
 
     /**
-     * Constructs an EzlibLoader with defined files to load.
+     * Constructs an EzlibLoader.
      *
      * @param files an array of file names.
      */
     public EzlibLoader(String... files) {
-        this(EzlibLoader.class.getClassLoader(), null, files);
+        this(EzlibLoader.class.getClassLoader(), null, true, files);
     }
 
     /**
-     * Constructs an EzlibLoader with defined folder and files to load.
+     * Constructs an EzlibLoader.
+     *
+     * @param useDefaultOptions true to initialize default options.
+     * @param files             an array of file names.
+     */
+    public EzlibLoader(boolean useDefaultOptions, String... files) {
+        this(EzlibLoader.class.getClassLoader(), null, useDefaultOptions, files);
+    }
+
+    /**
+     * Constructs an EzlibLoader.
      *
      * @param folder folder to save downloaded dependencies files.
      * @param files  an array of file names.
      */
     public EzlibLoader(File folder, String... files) {
-        this(EzlibLoader.class.getClassLoader(), folder, files);
+        this(EzlibLoader.class.getClassLoader(), folder, true, files);
     }
 
     /**
-     * Constructs an EzlibLoader with defined class loader and files to load.
+     * Constructs an EzlibLoader.
+     *
+     * @param folder            folder to save downloaded dependencies files.
+     * @param useDefaultOptions true to initialize default options.
+     * @param files             an array of file names.
+     */
+    public EzlibLoader(File folder, boolean useDefaultOptions, String... files) {
+        this(EzlibLoader.class.getClassLoader(), folder, useDefaultOptions, files);
+    }
+
+    /**
+     * Constructs an EzlibLoader.
      *
      * @param classLoader the class loader to append files.
      * @param files       an array of file names.
      */
     public EzlibLoader(ClassLoader classLoader, String... files) {
-        this(classLoader, null, files);
+        this(classLoader, null, true, files);
     }
 
     /**
-     * Constructs an EzlibLoader with defined class loader, folder and files to load.
+     * Constructs an EzlibLoader.
+     *
+     * @param classLoader       the class loader to append files.
+     * @param useDefaultOptions true to initialize default options.
+     * @param files             an array of file names.
+     */
+    public EzlibLoader(ClassLoader classLoader, boolean useDefaultOptions, String... files) {
+        this(classLoader, null, useDefaultOptions, files);
+    }
+
+    /**
+     * Constructs an EzlibLoader.
      *
      * @param classLoader the class loader to append files.
      * @param folder      folder to save downloaded dependencies files.
      * @param files       an array of file names.
      */
     public EzlibLoader(ClassLoader classLoader, File folder, String... files) {
+        this(classLoader, folder, true, files);
+    }
+
+    /**
+     * Constructs an EzlibLoader.
+     *
+     * @param classLoader       the class loader to append files.
+     * @param folder            folder to save downloaded dependencies files.
+     * @param useDefaultOptions true to initialize default options.
+     * @param files             an array of file names.
+     */
+    public EzlibLoader(ClassLoader classLoader, File folder, boolean useDefaultOptions, String... files) {
+        this(classLoader, folder, new Ezlib(folder), useDefaultOptions, files);
+    }
+
+    /**
+     * Constructs an EzlibLoader.
+     *
+     * @param classLoader the class loader to append files.
+     * @param folder      folder to save downloaded dependencies files.
+     * @param ezlib       the ezlib instance to use for append and relocation.
+     * @param files       an array of file names.
+     */
+    public EzlibLoader(ClassLoader classLoader, File folder, Ezlib ezlib, String... files) {
+        this(classLoader, folder, ezlib, true, files);
+    }
+
+    /**
+     * Constructs an EzlibLoader.
+     *
+     * @param classLoader       the class loader to append files.
+     * @param folder            folder to save downloaded dependencies files.
+     * @param ezlib             the ezlib instance to use for append and relocation.
+     * @param useDefaultOptions true to initialize default options.
+     * @param files             an array of file names.
+     */
+    public EzlibLoader(ClassLoader classLoader, File folder, Ezlib ezlib, boolean useDefaultOptions, String... files) {
         this.classLoader = classLoader;
         this.folder = folder;
-        this.files = files.length < 1 ? new String[] {"ezlib-dependencies.json"} : files;
-        this.ezlib = new Ezlib(folder);
+        if (files == null || (files.length > 0 && files[0] == null)) {
+            this.files = new String[0];
+        } else {
+            this.files = files.length < 1 ? new String[] {"ezlib-dependencies.json"} : files;
+        }
+        this.ezlib = ezlib;
         ezlib.setParentClassLoader(classLoader);
-        repositories.add(new Repository().name("MavenCentral").url("https://repo.maven.apache.org/maven2/"));
-        repositories.add(new Repository().name("Jitpack").url("https://jitpack.io/"));
-        replaces.put("{}", ".");
-        replaces.put("{package}", EzlibLoader.class.getPackage().getName());
-        fileReaders.put("json", (reader, loader) -> new Gson().fromJson(reader, Dependencies.class).load(loader));
+        if (useDefaultOptions) {
+            initDefaultOptions();
+        }
     }
 
     /**
@@ -285,6 +370,19 @@ public class EzlibLoader {
     }
 
     /**
+     * Initialize all default options for this instance.
+     */
+    public void initDefaultOptions() {
+        repositories.add(new Repository().name("MavenCentral").url("https://repo.maven.apache.org/maven2/"));
+        repositories.add(new Repository().name("Jitpack").url("https://jitpack.io/"));
+        replaces.put("{}", ".");
+        replaces.put("{package}", EzlibLoader.class.getPackage().getName());
+        try {
+            fileReaders.put("json", (reader, loader) -> new Gson().fromJson(reader, Dependencies.class).load(loader));
+        } catch (Throwable ignored) { }
+    }
+
+    /**
      * Load all the needed information and apply to class loader using the current Ezlib instance.
      *
      * @return the current ezlib loader.
@@ -363,109 +461,192 @@ public class EzlibLoader {
     /**
      * Load all the needed information from the current ezlib loader class.
      */
-    @SuppressWarnings("unchecked")
     public void loadClass() {
         logger.accept(4, "Loading current EzlibLoader class");
         int count = 0;
         for (Class<?> clazz = getClass(); clazz != Object.class; clazz = clazz.getSuperclass()) {
-            for (Field field : clazz.getDeclaredFields()) {
-                if (!Modifier.isStatic(field.getModifiers())) {
-                    continue;
-                }
-                Object object;
-                try {
-                    field.setAccessible(true);
-                    object = field.get(null);
-                } catch (IllegalAccessException e) {
-                    continue;
-                }
-                String type = null;
-                if (object instanceof Dependencies) {
-                    ((Dependencies) object).load(this);
-                } else if (object instanceof Repository) {
-                    loadRepository((Repository) object);
-                    type = "repository";
-                } else if (object instanceof Dependency) {
-                    loadDependency((Dependency) object);
-                    type = "dependency";
-                } else if (object instanceof String[]) {
-                    loadRelocations((String[]) object);
-                    type = "relocations";
-                } else if (object instanceof Predicate && hasParams(field.getGenericType(), String.class)) {
-                    conditions.put(field.getName().toLowerCase(), (Predicate<String>) object);
-                    type = "condition";
-                } else if (object instanceof BiConsumer) {
-                    if (hasParams(field.getGenericType(), Integer.class, String.class)) {
-                        logger = (BiConsumer<Integer, String>) object;
-                        type = "logger";
-                    } else if (hasParams(field.getGenericType(), Reader.class, EzlibLoader.class)) {
-                        fileReaders.put(field.getName().toLowerCase().split("_")[0], (BiConsumer<Reader, EzlibLoader>) object);
-                        type = "file reader";
-                    }
-                }
-                if (type != null) {
-                    count++;
-                    logger.accept(4, "Loaded " + type + " from field '" + field.getName() + "' at class '" + clazz.getName() + "'");
-                }
+            if (loadClass(clazz)) {
+                count++;
             }
         }
-        logger.accept(4, "Found " + count + " compatible field" + (count == 1 ? "" : "s"));
+        logger.accept(4, "Found " + count + " class" + (count == 1 ? "" : "es") + " with loadable objects");
+    }
+
+    /**
+     * Load all the needed information from provided class.
+     *
+     * @param clazz the class to visit.
+     * @return      true if any information was loaded.
+     */
+    public boolean loadClass(Class<?> clazz) {
+        final boolean fields = loadClassFields(clazz);
+        final boolean annotations = loadClassAnnotations(clazz);
+        return fields || annotations;
+    }
+
+    /**
+     * Load all the compatible objects from class static fields.
+     *
+     * @param clazz the class to visit.
+     * @return      true if any object was loaded.
+     */
+    @SuppressWarnings("unchecked")
+    public boolean loadClassFields(Class<?> clazz) {
+        boolean result = false;
+        for (Field field : clazz.getDeclaredFields()) {
+            if (!Modifier.isStatic(field.getModifiers())) {
+                continue;
+            }
+            Object object;
+            try {
+                field.setAccessible(true);
+                object = field.get(null);
+            } catch (IllegalAccessException e) {
+                continue;
+            }
+            final String type;
+            if (object instanceof Predicate && hasParams(field.getGenericType(), String.class)) {
+                conditions.put(field.getName().toLowerCase(), (Predicate<String>) object);
+                type = "condition";
+            } else if (object instanceof BiConsumer && hasParams(field.getGenericType(), Reader.class, EzlibLoader.class)) {
+                fileReaders.put(field.getName().toLowerCase().split("_")[0], (BiConsumer<Reader, EzlibLoader>) object);
+                type = "file reader";
+            } else if (object instanceof BiConsumer && hasParams(field.getGenericType(), Integer.class, String.class)) {
+                logger = (BiConsumer<Integer, String>) object;
+                type = "logger";
+            } else {
+                type = loadObject(object);
+            }
+            if (type != null) {
+                logger.accept(4, "Loaded " + type + " from field '" + field.getName() + "' at class '" + clazz.getName() + "'");
+                result = true;
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Load all the compatible objects from class annotations.<br>
+     * By default, the ezlib annotations module is used, therefore it only works
+     * if annotation classes was loaded into current class path.
+     *
+     * @param clazz the class to visit.
+     * @return      true if any object was loaded.
+     */
+    public boolean loadClassAnnotations(Class<?> clazz) {
+        if (!USE_ANNOTATIONS) {
+            return false;
+        }
+        boolean repository = loadRepository(Repository.ofAnnotation(clazz.getAnnotation(com.saicone.ezlib.Repository.class)));
+        boolean dependency = loadDependency(Dependency.ofAnnotation(clazz.getAnnotation(com.saicone.ezlib.Dependency.class)));
+        boolean dependencies = Dependencies.ofAnnotation(clazz.getAnnotation(com.saicone.ezlib.Dependencies.class)).load(this);
+        return repository || dependency || dependencies;
+    }
+
+    /**
+     * Load any compatible object and return the text name of loaded object.
+     *
+     * @param object the object to load.
+     * @return       a text name if the object is compatible, null otherwise.
+     */
+    public String loadObject(Object object) {
+        if (object instanceof Dependencies) {
+            ((Dependencies) object).load(this);
+        } else if (object instanceof Repository) {
+            loadRepository((Repository) object);
+            return "repository";
+        } else if (object instanceof Dependency) {
+            loadDependency((Dependency) object);
+            return "dependency";
+        } else if (object instanceof String[]) {
+            loadRelocations((String[]) object);
+            return "relocations";
+        }
+        return null;
     }
 
     /**
      * Load provided repository into ezlib loader.
      *
      * @param repository the repository to load.
+     * @return           true if the repository was loaded into memory.
      */
-    public void loadRepository(Repository repository) {
+    public boolean loadRepository(Repository repository) {
+        if (repository == null) {
+            return false;
+        }
         if (repository.url.toLowerCase().startsWith("http:") && !repository.allowInsecureProtocol) {
             logger.accept(1, "The repository " + repository.url + " uses an insecure protocol without explicit option to allow it, so will be ignored");
             repositories.remove(repository);
-            return;
+            return false;
+        }
+        if (!repository.isValid()) {
+            return false;
         }
         if (!this.repositories.contains(repository)) {
             this.repositories.add(repository);
+            return true;
         }
+        return false;
     }
 
     /**
      * Load provided repositories into ezlib loader.
      *
      * @param repositories a collection of repositories, can be null.
+     * @return             true if at least one repository was loaded into memory.
      */
-    public void loadRepositories(Collection<Repository> repositories) {
-        if (repositories != null) {
-            for (Repository repository : repositories) {
-                loadRepository(repository);
-            }
-            logger.accept(4, "Loaded " + repositories.size() + " repositor" + (repositories.size() == 1 ? "y" : "ies"));
+    public boolean loadRepositories(Collection<Repository> repositories) {
+        if (repositories == null || repositories.isEmpty()) {
+            return false;
         }
+        int count = 0;
+        for (Repository repository : repositories) {
+            if (loadRepository(repository)) {
+                count++;
+            }
+        }
+        logger.accept(4, "Loaded " + count + "/" + repositories.size() + " repositor" + (count == 1 ? "y" : "ies"));
+        return count > 0;
     }
 
     /**
      * Load provided repositories from pom document into ezlib loader.
      *
      * @param pom the pom document to read.
+     * @return    true if at least one repository was loaded into memory.
      */
-    public void loadRepositories(Document pom) {
+    public boolean loadRepositories(Document pom) {
         // Document path: repositories.repository.url
         Element element = pom.getDocumentElement();
+        int count = 0;
         for (Element repository : xmlParser.getElements(element, "repository", "repositories")) {
             String url = xmlParser.getTextContent(element, repository, "url");
             if (url != null) {
-                loadRepository(new Repository().url(url));
-                logger.accept(4, "Loaded repository from pom: " + url);
+                if (loadRepository(new Repository().url(url))) {
+                    count++;
+                }
             }
         }
+        logger.accept(4, "Loaded " + count + " repositor" + (count == 1 ? "y" : "ies") + " from pom");
+        return count > 0;
     }
 
     /**
      * Load provided dependency into ezlib loader.
      *
      * @param dependency the dependency to load.
+     * @return           true if the dependency was loaded into memory.
      */
-    public void loadDependency(Dependency dependency) {
+    public boolean loadDependency(Dependency dependency) {
+        if (dependency == null) {
+            return false;
+        }
         dependency.path = parse(dependency.path);
+        // Remove invalid repository
+        if (dependency.repository != null && !dependency.repository.isValid()) {
+            dependency.repository = null;
+        }
         dependency.relocate = parse(dependency.relocate);
         if (dependency.relocate != null) {
             // Remove duplicated relocations
@@ -484,42 +665,54 @@ public class EzlibLoader {
         }
         if (!this.dependencies.contains(dependency)) {
             this.dependencies.add(dependency);
+            return true;
         }
+        return false;
     }
 
     /**
      * Load provided dependencies into ezlib loader.
      *
      * @param dependencies a collection of dependencies, can be null.
+     * @return             true if at least one dependency was loaded into memory.
      */
-    public void loadDependencies(Collection<Dependency> dependencies) {
-        if (dependencies != null) {
-            for (Dependency dependency : dependencies) {
-                loadDependency(dependency);
-            }
-            logger.accept(4, "Loaded " + dependencies.size() + " dependenc" + (dependencies.size() == 1 ? "y" : "ies"));
+    public boolean loadDependencies(Collection<Dependency> dependencies) {
+        if (dependencies == null || dependencies.isEmpty()) {
+            return false;
         }
+        int count = 0;
+        for (Dependency dependency : dependencies) {
+            if (loadDependency(dependency)) {
+                count++;
+            }
+        }
+        logger.accept(4, "Loaded " + count + "/" + dependencies.size() + " dependenc" + (count == 1 ? "y" : "ies"));
+        return count > 0;
     }
 
     /**
      * Load provided relocations into ezlib loader.
      *
      * @param relocations a collection of relocations.
+     * @return            true if at least one relocation was loaded into memory.
      */
-    public void loadRelocations(String... relocations) {
-        loadRelocations(parseRelocations(relocations));
+    public boolean loadRelocations(String... relocations) {
+        return loadRelocations(parseRelocations(relocations));
     }
 
     /**
      * Load provided relocations into ezlib loader.
      *
      * @param relocations a collection of relocations, can be null.
+     * @return            true if at least one relocation was loaded into memory.
      */
-    public void loadRelocations(Map<String, String> relocations) {
-        if (relocations != null) {
-            this.relocations.putAll(parse(relocations));
-            logger.accept(4, "Loaded " + relocations.size() + " relocation" + (relocations.size() == 1 ? "" : "s"));
+    public boolean loadRelocations(Map<String, String> relocations) {
+        if (relocations == null || relocations.isEmpty()) {
+            return false;
         }
+        this.relocations.putAll(parse(relocations));
+        logger.accept(4, "Loaded " + relocations.size() + " relocation" + (relocations.size() == 1 ? "" : "s"));
+        return true;
     }
 
     /**
@@ -764,9 +957,9 @@ public class EzlibLoader {
         }
         try {
             if (inner) {
-                Class.forName(s, true, ezlib.getPublicClassLoader());
+                Class.forName(parse(s), true, ezlib.getPublicClassLoader());
             } else {
-                Class.forName(s);
+                Class.forName(parse(s));
             }
             return bool;
         } catch (ClassNotFoundException e) {
@@ -1177,6 +1370,25 @@ public class EzlibLoader {
         private boolean allowInsecureProtocol;
 
         /**
+         * Convert repository annotation into {@link Repository}.<br>
+         * Take in count this only work if annotation classes was loaded into current class path.
+         *
+         * @param annotation the repository annotation.
+         * @return           a repository object represented by annotation, null otherwise.
+         */
+        public static Repository ofAnnotation(Object annotation) {
+            if (!USE_ANNOTATIONS || !(annotation instanceof com.saicone.ezlib.Repository)) {
+                return null;
+            }
+            final com.saicone.ezlib.Repository repo = (com.saicone.ezlib.Repository) annotation;
+            return new Repository()
+                    .name(repo.name())
+                    .url(repo.url())
+                    .format(repo.format())
+                    .allowInsecureProtocol(repo.allowInsecureProtocol());
+        }
+
+        /**
          * Set the repostory unique name.
          *
          * @param name the repository name to compare with other repositories.
@@ -1220,6 +1432,10 @@ public class EzlibLoader {
             return this;
         }
 
+        private boolean isValid() {
+            return (name != null && !name.isEmpty()) || (url != null && !url.isEmpty());
+        }
+
         @Override
         public String toString() {
             return url;
@@ -1256,6 +1472,33 @@ public class EzlibLoader {
         private Set<String> condition;
         private Set<String> exclude;
         private Map<String, String> relocate;
+
+        /**
+         * Convert dependency annotation into {@link Dependency}.<br>
+         * Take in count this only work if annotation classes was loaded into current class path.
+         *
+         * @param annotation the dependency annotation.
+         * @return           a dependency object represented by annotation, null otherwise.
+         */
+        public static Dependency ofAnnotation(Object annotation) {
+            if (!USE_ANNOTATIONS || !(annotation instanceof com.saicone.ezlib.Dependency)) {
+                return null;
+            }
+            final com.saicone.ezlib.Dependency dep = (com.saicone.ezlib.Dependency) annotation;
+            return new Dependency()
+                    .path(dep.value())
+                    .repository(Repository.ofAnnotation(dep.repository()))
+                    .inner(dep.inner())
+                    .transitive(dep.transitive())
+                    .snapshot(dep.snapshot())
+                    .loadOptional(dep.loadOptional())
+                    .optional(dep.optional())
+                    .scopes(dep.scopes())
+                    .test(dep.test())
+                    .condition(dep.condition())
+                    .exclude(dep.exclude())
+                    .relocate(dep.relocate());
+        }
 
         /**
          * Set the dependency path.
@@ -1554,6 +1797,24 @@ public class EzlibLoader {
         private Map<String, String> relocations;
 
         /**
+         * Convert dependencies annotation into {@link Dependencies}.<br>
+         * Take in count this only work if annotation classes was loaded into current class path.
+         *
+         * @param annotation the dependencies annotation.
+         * @return           a dependencies object represented by annotation, null otherwise.
+         */
+        public static Dependencies ofAnnotation(Object annotation) {
+            if (!USE_ANNOTATIONS || !(annotation instanceof com.saicone.ezlib.Dependencies)) {
+                return new Dependencies();
+            }
+            final com.saicone.ezlib.Dependencies deps = (com.saicone.ezlib.Dependencies) annotation;
+            return new Dependencies()
+                    .repositories(Arrays.stream(deps.repositories()).map(Repository::ofAnnotation).collect(Collectors.toList()))
+                    .dependencies(Arrays.stream(deps.value()).map(Dependency::ofAnnotation).collect(Collectors.toList()))
+                    .relocations(parseRelocations(deps.relocations()));
+        }
+
+        /**
          * Set the repositories.
          *
          * @param repositories array of repositories.
@@ -1620,12 +1881,14 @@ public class EzlibLoader {
          * Load all the loaded information into provided ezlib loader.
          *
          * @param loader the ezlib loader to load information inside.
+         * @return       true if at least one object was loaded into provided ezlib loader.
          */
-        public void load(EzlibLoader loader) {
+        public boolean load(EzlibLoader loader) {
             loader.logger.accept(4, "Loading Dependencies into EzlibLoader");
-            loader.loadRelocations(relocations);
-            loader.loadRepositories(repositories);
-            loader.loadDependencies(dependencies);
+            boolean relocation = loader.loadRelocations(relocations);
+            boolean repository = loader.loadRepositories(repositories);
+            boolean dependency = loader.loadDependencies(dependencies);
+            return relocation || repository || dependency;
         }
     }
 }
