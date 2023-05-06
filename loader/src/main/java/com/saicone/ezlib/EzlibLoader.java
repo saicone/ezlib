@@ -691,6 +691,15 @@ public class EzlibLoader {
     }
 
     /**
+     * Load ezlib annotations dependency into ezlib loader.
+     *
+     * @return true if the dependency was loaded into memory.
+     */
+    public boolean loadAnnotationsDependency() {
+        return loadDependency(Dependency.annotations());
+    }
+
+    /**
      * Load provided relocations into ezlib loader.
      *
      * @param relocations a collection of relocations.
@@ -939,6 +948,15 @@ public class EzlibLoader {
     }
 
     /**
+     * Apply ezlib annotations dependency with current package relocations.
+     *
+     * @return true if dependency was applied correctly.
+     */
+    public boolean applyAnnotationsDependency() {
+        return applyDependency(Dependency.annotations());
+    }
+
+    /**
      * Test if the provided class exists in class loader.
      *
      * @param name  class name.
@@ -1018,7 +1036,11 @@ public class EzlibLoader {
         }
         final Map<String, String> finalMap = new HashMap<>();
         for (Map.Entry<String, String> entry : map.entrySet()) {
-            finalMap.put(parse(entry.getKey()), parse(entry.getValue()));
+            final String key = parse(entry.getKey());
+            final String value = parse(entry.getValue());
+            if (!key.equals(value)) {
+                finalMap.put(key, value);
+            }
         }
         return finalMap;
     }
@@ -1474,11 +1496,24 @@ public class EzlibLoader {
         private Map<String, String> relocate;
 
         /**
+         * Get ezlib annotations dependency compatible with current package relocations.
+         *
+         * @return a {@link Dependency} object that represent the ezlib annotations dependency.
+         */
+        public static Dependency annotations() {
+            return new Dependency()
+                    .path(Ezlib.GROUP + ":annotations:" + Ezlib.VERSION)
+                    .repository("https://jitpack.io/")
+                    .transitive(false)
+                    .relocate(Ezlib.GROUP, "com.saicone.ezlib");
+        }
+
+        /**
          * Convert dependency annotation into {@link Dependency}.<br>
          * Take in count this only work if annotation classes was loaded into current class path.
          *
          * @param annotation the dependency annotation.
-         * @return           a dependency object represented by annotation, null otherwise.
+         * @return           a {@link Dependency} object represented by annotation, null otherwise.
          */
         public static Dependency ofAnnotation(Object annotation) {
             if (!USE_ANNOTATIONS || !(annotation instanceof com.saicone.ezlib.Dependency)) {
