@@ -5,6 +5,7 @@ import java.lang.annotation.*;
 /**
  * Specifies the needed dependency to run the actual project.
  */
+@Documented
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Repeatable(Dependencies.class)
