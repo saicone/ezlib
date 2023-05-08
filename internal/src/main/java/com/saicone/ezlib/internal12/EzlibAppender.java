@@ -1,4 +1,4 @@
-package com.saicone.ezlib.internal11;
+package com.saicone.ezlib.internal12;
 
 import sun.misc.Unsafe;
 

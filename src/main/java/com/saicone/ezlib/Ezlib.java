@@ -31,7 +31,7 @@ public class Ezlib {
     /**
      * Current ezlib version to download ezlib loader.
      */
-    public static String VERSION = "-SNAPSHOT";
+    public static String VERSION = "1.2";
 
     /**
      * Change current ezlib version to another one, use "-SNAPSHOT" for latest commit.
@@ -491,8 +491,8 @@ public class Ezlib {
          */
         public Loader() throws ClassNotFoundException {
             this(
-                    Class.forName(GROUP + ".internal11.EzlibAppender", true, publicClassLoader),
-                    Class.forName(GROUP + ".internal11.EzlibRelocator", true, publicClassLoader)
+                    Class.forName(GROUP + ".internal12.EzlibAppender", true, publicClassLoader),
+                    Class.forName(GROUP + ".internal12.EzlibRelocator", true, publicClassLoader)
             );
         }
 
