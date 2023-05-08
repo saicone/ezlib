@@ -11,6 +11,7 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import java.io.*;
+import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
@@ -33,20 +34,7 @@ import java.util.stream.Collectors;
 public class EzlibLoader {
 
     private static final Pattern NODE_VARIABLE = Pattern.compile("\\$\\{([^}]+)}");
-    private static final boolean USE_ANNOTATIONS;
-
-    static {
-        boolean useAnnotations;
-        try {
-            Class.forName("com.saicone.ezlib.Repository");
-            Class.forName("com.saicone.ezlib.Dependency");
-            Class.forName("com.saicone.ezlib.Dependencies");
-            useAnnotations = true;
-        } catch (ClassNotFoundException e) {
-            useAnnotations = false;
-        }
-        USE_ANNOTATIONS = useAnnotations;
-    }
+    private static boolean USE_ANNOTATIONS = true;
 
     // Loader parameters
     private final ClassLoader classLoader;
@@ -537,10 +525,15 @@ public class EzlibLoader {
         if (!USE_ANNOTATIONS) {
             return false;
         }
-        boolean repository = loadRepository(Repository.ofAnnotation(clazz.getAnnotation(com.saicone.ezlib.Repository.class)));
-        boolean dependency = loadDependency(Dependency.ofAnnotation(clazz.getAnnotation(com.saicone.ezlib.Dependency.class)));
-        boolean dependencies = Dependencies.ofAnnotation(clazz.getAnnotation(com.saicone.ezlib.Dependencies.class)).load(this);
-        return repository || dependency || dependencies;
+        try {
+            boolean repository = loadRepository(Repository.ofAnnotation(clazz.getAnnotation(com.saicone.ezlib.Repository.class)));
+            boolean dependency = loadDependency(Dependency.ofAnnotation(clazz.getAnnotation(com.saicone.ezlib.Dependency.class)));
+            Dependencies dependencies = Dependencies.ofAnnotation(clazz.getAnnotation(com.saicone.ezlib.Dependencies.class));
+            return (dependencies != null && dependencies.load(this)) || repository || dependency;
+        } catch (NoClassDefFoundError e) {
+            USE_ANNOTATIONS = false;
+            return false;
+        }
     }
 
     /**
@@ -1397,9 +1390,15 @@ public class EzlibLoader {
          *
          * @param annotation the repository annotation.
          * @return           a repository object represented by annotation, null otherwise.
+         * @param <A>        annotation type.
          */
-        public static Repository ofAnnotation(Object annotation) {
-            if (!USE_ANNOTATIONS || !(annotation instanceof com.saicone.ezlib.Repository)) {
+        public static <A extends Annotation> Repository ofAnnotation(A annotation) {
+            try {
+                if (!USE_ANNOTATIONS || !(annotation instanceof com.saicone.ezlib.Repository)) {
+                    return null;
+                }
+            } catch (NoClassDefFoundError e) {
+                USE_ANNOTATIONS = false;
                 return null;
             }
             final com.saicone.ezlib.Repository repo = (com.saicone.ezlib.Repository) annotation;
@@ -1514,9 +1513,15 @@ public class EzlibLoader {
          *
          * @param annotation the dependency annotation.
          * @return           a {@link Dependency} object represented by annotation, null otherwise.
+         * @param <A>        annotation type.
          */
-        public static Dependency ofAnnotation(Object annotation) {
-            if (!USE_ANNOTATIONS || !(annotation instanceof com.saicone.ezlib.Dependency)) {
+        public static <A extends Annotation> Dependency ofAnnotation(A annotation) {
+            try {
+                if (!USE_ANNOTATIONS || !(annotation instanceof com.saicone.ezlib.Dependency)) {
+                    return null;
+                }
+            } catch (NoClassDefFoundError e) {
+                USE_ANNOTATIONS = false;
                 return null;
             }
             final com.saicone.ezlib.Dependency dep = (com.saicone.ezlib.Dependency) annotation;
@@ -1837,10 +1842,16 @@ public class EzlibLoader {
          *
          * @param annotation the dependencies annotation.
          * @return           a dependencies object represented by annotation, null otherwise.
+         * @param <A>        annotation type.
          */
-        public static Dependencies ofAnnotation(Object annotation) {
-            if (!USE_ANNOTATIONS || !(annotation instanceof com.saicone.ezlib.Dependencies)) {
-                return new Dependencies();
+        public static <A extends Annotation> Dependencies ofAnnotation(A annotation) {
+            try {
+                if (!USE_ANNOTATIONS || !(annotation instanceof com.saicone.ezlib.Dependencies)) {
+                    return null;
+                }
+            } catch (NoClassDefFoundError e) {
+                USE_ANNOTATIONS = false;
+                return null;
             }
             final com.saicone.ezlib.Dependencies deps = (com.saicone.ezlib.Dependencies) annotation;
             return new Dependencies()
