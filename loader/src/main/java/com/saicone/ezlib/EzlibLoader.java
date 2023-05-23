@@ -315,16 +315,16 @@ public class EzlibLoader {
         switch (type.toLowerCase()) {
             case "file":
                 final File file = new File(name);
-                return file.exists() ? new FileReader(file) : null;
+                return file.exists() ? new BufferedReader(new FileReader(file)) : null;
             case "url":
-                return new BufferedReader(new InputStreamReader(new URL(name).openConnection().getInputStream()));
+                return new InputStreamReader(new BufferedInputStream(new URL(name).openConnection().getInputStream()));
             case "http":
             case "https":
-                return new BufferedReader(new InputStreamReader(new URL(type + ':' + name).openConnection().getInputStream()));
+                return new InputStreamReader(new BufferedInputStream(new URL(type + ':' + name).openConnection().getInputStream()));
             case "input":
             case "inputstream":
                 final InputStream in = classLoader.getResourceAsStream(name);
-                return in == null ? null : new InputStreamReader(in);
+                return in == null ? null : new InputStreamReader(new BufferedInputStream(in));
             default:
                 return getDefaultReader(type + (type.isEmpty() ? "" : ":") + name);
         }
@@ -338,7 +338,7 @@ public class EzlibLoader {
      */
     public Reader getDefaultReader(String name) {
         final InputStream in = classLoader.getResourceAsStream(name);
-        return in == null ? null : new InputStreamReader(in);
+        return in == null ? null : new InputStreamReader(new BufferedInputStream(in));
     }
 
     /**
