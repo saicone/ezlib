@@ -87,11 +87,10 @@ public class EzlibAnnotationProcessor extends AbstractProcessor {
             if (entry.getKey().trim().isEmpty() || entry.getValue().isEmpty()) {
                 continue;
             }
-            entry.getValue().clearEmpty();
             try {
                 final FileObject fileObject = environment.getFiler().createResource(StandardLocation.CLASS_OUTPUT, "", entry.getKey());
                 try (BufferedWriter writer = new BufferedWriter(fileObject.openWriter())) {
-                    gson.toJson(entry.getValue(), writer);
+                    gson.toJson(entry.getValue().asMap(), writer);
                 }
             } catch (IOException e) {
                 environment.getMessager().printMessage(Diagnostic.Kind.ERROR, "Unable to generate dependencies file at " + entry.getKey() + "\nReason:" + e.getMessage());
@@ -212,16 +211,18 @@ public class EzlibAnnotationProcessor extends AbstractProcessor {
             return repositories.isEmpty() && dependencies.isEmpty() && relocations.isEmpty();
         }
 
-        private void clearEmpty() {
-            if (repositories.isEmpty()) {
-                repositories = null;
+        private Map<String, Object> asMap() {
+            final Map<String, Object> map = new HashMap<>();
+            if (!repositories.isEmpty()) {
+                map.put("repositories", repositories);
             }
-            if (dependencies.isEmpty()) {
-                dependencies = null;
+            if (!dependencies.isEmpty()) {
+                map.put("dependencies", dependencies);
             }
-            if (relocations.isEmpty()) {
-                relocations = null;
+            if (!relocations.isEmpty()) {
+                map.put("relocations", relocations);
             }
+            return map;
         }
     }
 }
