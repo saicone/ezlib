@@ -32,6 +32,7 @@ public class EzlibAnnotationProcessor extends AbstractProcessor {
     private ProcessingEnvironment environment;
     private Gson gson;
     private Map<String, SerializedFile> files;
+    private Set<String> generatedFiles;
 
     @Override
     public synchronized void init(ProcessingEnvironment processingEnv) {
@@ -64,6 +65,13 @@ public class EzlibAnnotationProcessor extends AbstractProcessor {
         return getFiles().get(name);
     }
 
+    public Set<String> getGeneratedFiles() {
+        if (generatedFiles == null) {
+            generatedFiles = new HashSet<>();
+        }
+        return generatedFiles;
+    }
+
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
         if (roundEnv.processingOver()) {
@@ -84,9 +92,10 @@ public class EzlibAnnotationProcessor extends AbstractProcessor {
 
         Gson gson = getGson();
         for (Map.Entry<String, SerializedFile> entry : getFiles().entrySet()) {
-            if (entry.getKey().trim().isEmpty() || entry.getValue().isEmpty()) {
+            if (entry.getKey().trim().isEmpty() || getGeneratedFiles().contains(entry.getKey()) || entry.getValue().isEmpty()) {
                 continue;
             }
+            getGeneratedFiles().add(entry.getKey());
             try {
                 final FileObject fileObject = environment.getFiler().createResource(StandardLocation.CLASS_OUTPUT, "", entry.getKey());
                 try (BufferedWriter writer = new BufferedWriter(fileObject.openWriter())) {
