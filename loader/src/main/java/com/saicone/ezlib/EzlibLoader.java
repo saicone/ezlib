@@ -184,6 +184,17 @@ public class EzlibLoader {
     }
 
     /**
+     * Set the xml parser.
+     *
+     * @param xmlParser the xml parser instance to use.
+     * @return          the current ezlib loader.
+     */
+    public EzlibLoader xmlParser(XmlParser xmlParser) {
+        this.xmlParser = xmlParser;
+        return this;
+    }
+
+    /**
      * Add a global relocation to loader.
      *
      * @param pattern     the source pattern to relocate.
@@ -1258,6 +1269,15 @@ public class EzlibLoader {
          */
         public Document fromFile(File file) throws IOException, SAXException {
             return docBuilder.parse(file.toURI().toURL().openStream());
+        }
+
+        /**
+         * Get document builder used to parse documents.
+         *
+         * @return a document builder.
+         */
+        public DocumentBuilder getDocBuilder() {
+            return docBuilder;
         }
 
         /**
