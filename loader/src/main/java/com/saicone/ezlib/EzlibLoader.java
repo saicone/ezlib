@@ -746,9 +746,20 @@ public class EzlibLoader {
         try {
             // Find repository url and format checking if dependency has repository url or name to get from global repositories
             repo = dependency.mainRepository(this);
+            boolean shouldExist = repo != null;
+            if (!shouldExist) {
+                // Use first repository
+                for (Repository r : this.repositories) {
+                    repo = r;
+                }
+                // Use default repository
+                if (repo == null) {
+                    new Repository().url(this.ezlib.getDefaultRepository());
+                }
+            }
             logger.accept(4, "Using repository " + repo);
             // Try to apply dependency using explicit repository
-            if (applyDependency(dependency, repo, relocations)) {
+            if (applyDependency(dependency, repo, relocations, shouldExist)) {
                 return true;
             }
 
@@ -784,17 +795,30 @@ public class EzlibLoader {
      * @return            true if dependency was applied correctly.
      */
     public boolean applyDependency(Dependency dependency, Repository repository, Map<String, String> relocations) {
+        return applyDependency(dependency, repository, relocations, false);
+    }
+
+    /**
+     * Apply the provided dependency with defined repository and map of relocations.
+     *
+     * @param dependency  the dependency to apply.
+     * @param repository  the repository to download the dependency.
+     * @param relocations the relocation map to use.
+     * @param shouldExist true if the dependency should be applied without errors.
+     * @return            true if dependency was applied correctly.
+     */
+    public boolean applyDependency(Dependency dependency, Repository repository, Map<String, String> relocations, boolean shouldExist) {
         final String[] path = dependency.path.split(":");
         // Check if dependency uses version path and get it from maven metadata
         Dependency modified = null;
-        if (path[2].charAt(0) == '@' && parseVersionPath(path, repository.url)) {
+        if (path[2].charAt(0) == '@' && parseVersionPath(path, repository.url, shouldExist)) {
             modified = new Dependency().path(String.join(":", path)).relocate(dependency.relocate);
         }
         // Check if dependency is snapshot to get file version from maven metadata
         final boolean lookSnapshot = dependency.snapshot;
         final boolean hasFileVersion = path[2].indexOf('@') > 0;
         if (lookSnapshot && !hasFileVersion) {
-            if (parseSnapshot(path, repository.url)) {
+            if (parseSnapshot(path, repository.url, shouldExist)) {
                 modified = new Dependency().path(String.join(":", path)).relocate(dependency.relocate);
             } else {
                 logger.accept(2, "Dependency is marked has snapshot, but cannot find snapshot version from repository: " + repository);
@@ -818,7 +842,7 @@ public class EzlibLoader {
                 return false;
             }
             // Try to find snapshot if isn't configured previously
-            if (parseSnapshot(path, repository.url)) {
+            if (parseSnapshot(path, repository.url, false)) {
                 modified = new Dependency().path(String.join(":", path)).relocate(dependency.relocate);
                 // Ignore modified dependency if it was applied before
                 if (applied.contains(modified)) {
@@ -865,8 +889,16 @@ public class EzlibLoader {
             // Return true because the dependency was loaded correctly
             return true;
         }
+        // Parse pom file as xml
+        Document pomDocument;
+        try {
+            pomDocument = xmlParser.fromFile(pom);
+        } catch (IOException | SAXException e) {
+            new RuntimeException("Cannot read pom file of '" + dependency.path + "' as XML document", e).printStackTrace();
+            return true;
+        }
         // Download only sub dependencies (using optional comparator and exclusions)
-        applyDependency(dependency, repository, xmlParser.fromFile(pom));
+        applyDependency(dependency, repository, pomDocument);
         return true;
     }
 
@@ -1038,9 +1070,16 @@ public class EzlibLoader {
         return finalMap;
     }
 
-    private boolean parseVersionPath(String[] path, String repository) {
+    private boolean parseVersionPath(String[] path, String repository, boolean shouldExist) {
         final String url = ezlib.parseRepository(repository) + path[0].replace(".", "/") + '/' + path[1] + "/maven-metadata.xml";
-        final Document ver = xmlParser.fromUrl(url);
+        Document ver = null;
+        try {
+            ver = xmlParser.fromUrl(url);
+        } catch (IOException | SAXException e) {
+            if (shouldExist) {
+                new RuntimeException("Cannot parse XML document from: " + url, e).printStackTrace();
+            }
+        }
         if (ver == null) {
             return false;
         }
@@ -1063,9 +1102,16 @@ public class EzlibLoader {
         return true;
     }
     
-    private boolean parseSnapshot(String[] path, String repository) {
+    private boolean parseSnapshot(String[] path, String repository, boolean shouldExist) {
         final String url = ezlib.parseRepository(repository) + path[0].replace(".", "/") + '/' + path[1] + '/' + path[2] + "/maven-metadata.xml";
-        final Document ver = xmlParser.fromUrl(url);
+        Document ver = null;
+        try {
+            ver = xmlParser.fromUrl(url);
+        } catch (IOException | SAXException e) {
+            if (shouldExist) {
+                new RuntimeException("Cannot parse XML document from: " + url, e).printStackTrace();
+            }
+        }
         if (ver == null) {
             return false;
         }
@@ -1158,6 +1204,7 @@ public class EzlibLoader {
     public static class XmlParser {
         private final DocumentBuilder docBuilder;
 
+
         /**
          * Constructs a XML parser with default document builder.
          */
@@ -1191,15 +1238,14 @@ public class EzlibLoader {
          *
          * @param url the URL to connect.
          * @return     a parsed document from URL or null.
+         * @throws IOException  if an I/O exception occurs.
+         * @throws SAXException if any parse errors occur.
          */
-        public Document fromUrl(String url) {
-            try {
-                URLConnection con = new URL(url).openConnection();
-                con.addRequestProperty("Accept", "application/xml");
-                return docBuilder.parse(con.getInputStream());
-            } catch (IOException | SAXException e) {
-                return null;
-            }
+        public Document fromUrl(String url) throws IOException, SAXException {
+            final URLConnection con = new URL(url).openConnection();
+            con.addRequestProperty("Accept", "application/xml");
+            con.addRequestProperty("User-Agent", "Mozilla/5.0");
+            return docBuilder.parse(con.getInputStream());
         }
 
         /**
@@ -1207,13 +1253,11 @@ public class EzlibLoader {
          *
          * @param file the file to parse.
          * @return     the provided file as document or null.
+         * @throws IOException  if an I/O exception occurs.
+         * @throws SAXException if any parse errors occur.
          */
-        public Document fromFile(File file) {
-            try {
-                return docBuilder.parse(file.toURI().toURL().openStream());
-            } catch (IOException | SAXException e) {
-                return null;
-            }
+        public Document fromFile(File file) throws IOException, SAXException {
+            return docBuilder.parse(file.toURI().toURL().openStream());
         }
 
         /**
@@ -1748,12 +1792,7 @@ public class EzlibLoader {
                     }
                 }
             }
-            // Return first repository
-            for (Repository repo : loader.repositories) {
-                return repo;
-            }
-            // Return default repository
-            return new Repository().url(loader.ezlib.getDefaultRepository());
+            return null;
         }
 
         private boolean meetTest(EzlibLoader loader) {
