@@ -8,6 +8,7 @@ import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.net.URLConnection;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -375,7 +376,9 @@ public class Ezlib {
      * @throws IOException If any error occurs with the download.
      */
     public File download(URL url, File output) throws IOException {
-        try (InputStream in = url.openStream(); OutputStream out = Files.newOutputStream(output.toPath())) {
+        final URLConnection con = url.openConnection();
+        con.addRequestProperty("User-Agent", "Mozilla/5.0");
+        try (InputStream in = con.getInputStream(); OutputStream out = Files.newOutputStream(output.toPath())) {
             byte[] buffer = new byte[4096];
             int len;
             while ((len = in.read(buffer)) > 0) {
