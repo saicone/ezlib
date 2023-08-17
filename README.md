@@ -183,7 +183,7 @@ shadowJar {
 ## Features
 
 ### Easy dependency builder
-Ezlib allow you to append dependencies into parent class loader and specify repository after load method.
+Ezlib allow you to append dependencies into parent class loader and specify repository before load method.
 ```java
 Ezlib ezlib = new Ezlib();
 ezlib.init();
