@@ -3,14 +3,14 @@
 <h4 align="center">The easy way to load dependencies at runtime.</h4>
 
 <p align="center">
+    <a href="https://saic.one/discord">
+        <img src="https://img.shields.io/discord/974288218839191612.svg?style=flat-square&label=discord&logo=discord&logoColor=white&color=7289da"/>
+    </a>
     <a href="https://www.codefactor.io/repository/github/saicone/ezlib">
         <img src="https://www.codefactor.io/repository/github/saicone/ezlib/badge?style=flat-square"/>
     </a>
     <a href="https://github.com/saicone/ezlib">
         <img src="https://img.shields.io/github/languages/code-size/saicone/ezlib?style=flat-square"/>
-    </a>
-    <a href="https://github.com/saicone/ezlib">
-        <img src="https://img.shields.io/tokei/lines/github/saicone/ezlib?style=flat-square"/>
     </a>
     <a href="https://jitpack.io/#com.saicone/ezlib">
         <img src="https://jitpack.io/v/com.saicone/ezlib.svg?style=flat-square"/>
