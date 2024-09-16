@@ -49,7 +49,7 @@ Take in count ezlib is made to be inside your project, so you must configure it 
 For Gradle Groovy project (build.gradle)
 ```groovy
 plugins {
-    id 'com.github.johnrengelman.shadow' version '8.1.1'
+    id 'com.gradleup.shadow' version '8.3.1'
 }
 
 repositories {
@@ -81,7 +81,7 @@ shadowJar {
   
   ```kotlin
   plugins {
-      id("com.github.johnrengelman.shadow") version "8.1.1"
+      id("com.gradleup.shadow") version "8.3.1"
   }
 
   repositories {
