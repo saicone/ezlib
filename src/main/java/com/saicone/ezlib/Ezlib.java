@@ -32,7 +32,7 @@ public class Ezlib {
     /**
      * Current ezlib version to download ezlib loader.
      */
-    public static String VERSION = "1.2";
+    public static String VERSION = "${version}";
 
     /**
      * Change current ezlib version to another one, use "-SNAPSHOT" for latest commit.
