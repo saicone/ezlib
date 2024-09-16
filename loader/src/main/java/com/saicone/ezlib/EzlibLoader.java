@@ -830,14 +830,14 @@ public class EzlibLoader {
         // Check if dependency uses version path and get it from maven metadata
         Dependency modified = null;
         if (path[2].charAt(0) == '@' && parseVersionPath(path, repository.url, shouldExist)) {
-            modified = new Dependency().path(String.join(":", path)).relocate(dependency.relocate);
+            modified = Dependency.of(String.join(":", path)).relocate(dependency.relocate);
         }
         // Check if dependency is snapshot to get file version from maven metadata
         final boolean lookSnapshot = dependency.snapshot;
         final boolean hasFileVersion = path[2].indexOf('@') > 0;
         if (lookSnapshot && !hasFileVersion) {
             if (parseSnapshot(path, repository.url, shouldExist)) {
-                modified = new Dependency().path(String.join(":", path)).relocate(dependency.relocate);
+                modified = Dependency.of(String.join(":", path)).relocate(dependency.relocate);
             } else {
                 logger.accept(2, "Dependency is marked has snapshot, but cannot find snapshot version from repository: " + repository);
             }
@@ -861,7 +861,7 @@ public class EzlibLoader {
             }
             // Try to find snapshot if isn't configured previously
             if (parseSnapshot(path, repository.url, false)) {
-                modified = new Dependency().path(String.join(":", path)).relocate(dependency.relocate);
+                modified = Dependency.of(String.join(":", path)).relocate(dependency.relocate);
                 // Ignore modified dependency if it was applied before
                 if (applied.contains(modified)) {
                     logger.accept(4, "The dependency " + modified.path + " is already applied into class loader");
@@ -966,7 +966,7 @@ public class EzlibLoader {
                 }
             }
             // Build sub-dependency with relocations
-            Dependency dep = new Dependency().path(path).relocate(dependency.relocate);
+            Dependency dep = Dependency.of(path).relocate(dependency.relocate);
             if (applied.contains(dep)) {
                 logger.accept(4, "The sub-dependency " + path + " is already applied into class loader");
                 continue;
@@ -1629,6 +1629,56 @@ public class EzlibLoader {
          */
         public Dependency path(String path) {
             this.path = path;
+            return this;
+        }
+
+        /**
+         * Set the dependency group.
+         *
+         * @param group the dependency group.
+         * @return      the current dependency object.
+         */
+        public Dependency group(String group) {
+            if (this.path == null || this.path.contains(":")) {
+                this.path = group;
+            } else {
+                this.path = group + this.path.substring(this.path.indexOf(':'));
+            }
+            return this;
+        }
+
+        /**
+         * Set the dependency name.<br>
+         * Should be used when dependency group or name exists.
+         *
+         * @param name the dependency name.
+         * @return     the current dependency object.
+         */
+        public Dependency name(String name) {
+            final int first = this.path.indexOf(':');
+            if (first < 0) {
+                this.path = this.path + ":" + name;
+                return this;
+            }
+            final int second = this.path.indexOf(':', first);
+            if (second < 0) {
+                this.path = this.path.substring(0, first) + ":" + name;
+            } else {
+                this.path = this.path.substring(0, first) + ":" + name + this.path.substring(second);
+            }
+            return this;
+        }
+
+        /**
+         * Set the dependency version.<br>
+         * Should be used when dependency name or version exists.
+         *
+         * @param version the dependency version.
+         * @return        the current dependency object.
+         */
+        public Dependency version(String version) {
+            final int index = this.path.indexOf(':', this.path.indexOf(':'));
+            this.path = path.substring(0, index) + ":" + version;
             return this;
         }
 
