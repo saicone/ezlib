@@ -881,8 +881,10 @@ public class EzlibLoader {
         }
 
         // Append dependency to inner or parent class loader
-        if (!ezlib.dependency(file).relocations(relocations).parent(!dependency.inner).load()) {
-            throw new RuntimeException("Cannot load dependency " + dependency.path + " into class loader after download");
+        try {
+            ezlib.dependency(file).relocations(relocations).parent(!dependency.inner).load();
+        } catch (Throwable t) {
+            throw new RuntimeException("Cannot load dependency " + dependency.path + " into class loader after download", t);
         }
 
         // Add to applied dependencies

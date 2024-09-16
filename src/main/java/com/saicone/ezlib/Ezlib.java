@@ -286,7 +286,7 @@ public class Ezlib {
         return new LoadableDependency(path).repository(repository);
     }
 
-    private boolean load(LoadableDependency dependency) {
+    private void load(LoadableDependency dependency) throws IllegalArgumentException {
         File file = dependency.file;
         if (dependency.file == null) {
             try {
@@ -301,14 +301,13 @@ public class Ezlib {
             try {
                 path = Files.createTempFile(file.getName() + '.' + Math.abs(dependency.relocations.hashCode()), ".tmp");
             } catch (IOException e) {
-                e.printStackTrace();
-                return false;
+                throw new RuntimeException("Cannot create temporary file for relocated dependency", e);
             }
             path.toFile().deleteOnExit();
             try {
                 loader.relocate(file, path.toFile(), dependency.relocations);
             } catch (Throwable t) {
-                return false;
+                throw new RuntimeException("Cannot relocate dependency");
             }
             file = path.toFile();
         }
@@ -316,12 +315,10 @@ public class Ezlib {
         try {
             loader.append(file.toURI().toURL(), dependency.parent);
         } catch (MalformedURLException e) {
-            e.printStackTrace();
-            return false;
+            throw new RuntimeException("Cannot convert dependency file to URL");
         } catch (Throwable t) {
-            return false;
+            throw new RuntimeException("Cannot append dependency into " + (dependency.parent ? "parent" : "child") + " class path", t);
         }
-        return true;
     }
 
     /**
@@ -677,11 +674,10 @@ public class Ezlib {
         /**
          * Load the current dependency.
          *
-         * @return true if dependency was loaded successfully.
          * @throws IllegalArgumentException if the dependency is not formatted correctly.
          */
-        public boolean load() throws IllegalArgumentException {
-            return Ezlib.this.load(this);
+        public void load() throws IllegalArgumentException {
+            Ezlib.this.load(this);
         }
     }
 }
