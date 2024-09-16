@@ -1,6 +1,5 @@
 package com.saicone.ezlib;
 
-import com.google.gson.Gson;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -376,9 +375,17 @@ public class EzlibLoader {
         repositories.add(new Repository().name("Jitpack").url("https://jitpack.io/"));
         replaces.put("{}", ".");
         replaces.put("{package}", EzlibLoader.class.getPackage().getName());
-        try {
-            fileReaders.put("json", (reader, loader) -> new Gson().fromJson(reader, Dependencies.class).load(loader));
-        } catch (Throwable ignored) { }
+        fileReaders.put("json", (reader, loader) -> {
+            try {
+                final Class<?> clazz = Class.forName("com.google.gson.Gson");
+                final Object gson = clazz.getDeclaredConstructor().newInstance();
+                final Dependencies dependencies = (Dependencies) clazz.getDeclaredMethod("fromJson", Reader.class, Class.class)
+                        .invoke(gson, reader, Dependencies.class);
+                dependencies.load(loader);
+            } catch (Throwable t) {
+                throw new RuntimeException(t);
+            }
+        });
     }
 
     /**
