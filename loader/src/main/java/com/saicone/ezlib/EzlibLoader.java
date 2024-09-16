@@ -1572,6 +1572,16 @@ public class EzlibLoader {
         }
 
         /**
+         * Create new dependency using provided path.
+         *
+         * @param path the dependency gradle-like path.
+         * @return     a newly created dependency.
+         */
+        public static Dependency of(String path) {
+            return new Dependency().path(path);
+        }
+
+        /**
          * Convert dependency annotation into {@link Dependency}.<br>
          * Take in count this only work if annotation classes was loaded into current class path.
          *
