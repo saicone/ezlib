@@ -1,4 +1,4 @@
-package com.saicone.ezlib.internal12;
+package com.saicone.ezlib.internal13;
 
 import me.lucko.jarrelocator.JarRelocator;
 

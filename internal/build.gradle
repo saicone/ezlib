@@ -11,7 +11,8 @@ publishing {
 }
 
 dependencies {
-    implementation 'me.lucko:jar-relocator:1.6'
+    implementation('me.lucko:jar-relocator:1.7') { transitive = false }
+    implementation 'org.ow2.asm:asm-commons:9.7'
 }
 
 jar {
