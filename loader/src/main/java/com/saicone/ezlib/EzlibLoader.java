@@ -361,7 +361,7 @@ public class EzlibLoader {
             ezlib.init();
             logger.accept(4, "Successfully initialized Ezlib instance...");
         } else {
-            logger.accept(3, "Ezlib is already initialized...");
+            logger.accept(4, "Ezlib is already initialized...");
         }
         if (xmlParser == null) {
             xmlParser = new XmlParser();
@@ -1036,8 +1036,8 @@ public class EzlibLoader {
             final String key;
             final String value;
             if (index > 0 && index + 1 < condition.length()) {
-                key = condition.substring(0, index).toLowerCase();
-                value = condition.substring(index + 1);
+                key = condition.substring(0, index).toLowerCase().trim();
+                value = condition.substring(index + 1).trim();
             } else {
                 key = condition.toLowerCase();
                 value = "";
