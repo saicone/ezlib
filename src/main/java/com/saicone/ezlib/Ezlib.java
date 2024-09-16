@@ -491,8 +491,8 @@ public class Ezlib {
          */
         public Loader() throws ClassNotFoundException {
             this(
-                    Class.forName(GROUP + ".internal12.EzlibAppender", true, publicClassLoader),
-                    Class.forName(GROUP + ".internal12.EzlibRelocator", true, publicClassLoader)
+                    Class.forName(GROUP + ".internal13.EzlibAppender", true, publicClassLoader),
+                    Class.forName(GROUP + ".internal13.EzlibRelocator", true, publicClassLoader)
             );
         }
 
