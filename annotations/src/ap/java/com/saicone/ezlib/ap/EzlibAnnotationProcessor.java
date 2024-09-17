@@ -134,7 +134,7 @@ public class EzlibAnnotationProcessor extends AbstractProcessor {
     }
 
     private Map<String, Object> serialize(Repository repository) {
-        Map<String, Object> map = new HashMap<>();
+        Map<String, Object> map = new LinkedHashMap<>();
         if (!repository.name().isEmpty()) {
             map.put("name", repository.name());
         }
@@ -154,7 +154,7 @@ public class EzlibAnnotationProcessor extends AbstractProcessor {
     }
 
     private Map<String, Object> serialize(Dependency dependency) {
-        Map<String, Object> map = new HashMap<>();
+        Map<String, Object> map = new LinkedHashMap<>();
         if (dependency.value().isEmpty()) {
             return map;
         }
@@ -197,7 +197,7 @@ public class EzlibAnnotationProcessor extends AbstractProcessor {
     }
 
     private Map<String, String> parseRelocations(String... relocations) {
-        final Map<String, String> map = new HashMap<>();
+        final Map<String, String> map = new LinkedHashMap<>();
         if (relocations.length < 2) {
             return map;
         }
@@ -212,16 +212,16 @@ public class EzlibAnnotationProcessor extends AbstractProcessor {
     }
 
     private static class SerializedFile {
-        private Set<Map<String, Object>> repositories = new HashSet<>();
-        private Set<Map<String, Object>> dependencies = new HashSet<>();
-        private Map<String, String> relocations = new HashMap<>();
+        private Set<Map<String, Object>> repositories = new LinkedHashSet<>();
+        private Set<Map<String, Object>> dependencies = new LinkedHashSet<>();
+        private Map<String, String> relocations = new LinkedHashMap<>();
 
         private boolean isEmpty() {
             return repositories.isEmpty() && dependencies.isEmpty() && relocations.isEmpty();
         }
 
         private Map<String, Object> asMap() {
-            final Map<String, Object> map = new HashMap<>();
+            final Map<String, Object> map = new LinkedHashMap<>();
             if (!repositories.isEmpty()) {
                 map.put("repositories", repositories);
             }
