@@ -386,6 +386,19 @@ public class EzlibLoader {
                 throw new RuntimeException(t);
             }
         });
+        final BiConsumer<Reader, EzlibLoader> yamlReader = (reader, loader) -> {
+            try {
+                final Class<?> clazz = Class.forName("org.yaml.snakeyaml.Yaml");
+                final Object yaml = clazz.getDeclaredConstructor().newInstance();
+                final Dependencies dependencies = (Dependencies) clazz.getDeclaredMethod("loadAs", Reader.class, Class.class)
+                        .invoke(yaml, reader, Dependencies.class);
+                dependencies.load(loader);
+            } catch (Throwable t) {
+                throw new RuntimeException(t);
+            }
+        };
+        fileReaders.put("yaml", yamlReader);
+        fileReaders.put("yml", yamlReader);
     }
 
     /**
