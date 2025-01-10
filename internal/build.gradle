@@ -22,6 +22,7 @@ jar {
 
 shadowJar {
     archiveClassifier.set('')
-    relocate 'org.objectweb.asm', 'com.saicone.ezlib.asm97'
-    relocate 'me.lucko.jarrelocator', 'com.saicone.ezlib.relocator17'
+    relocate 'com.saicone.ezlib.internal', 'com.saicone.ezlib.internal.' + (System.getenv("VERSION") ?: project.version)
+    relocate 'org.objectweb.asm', 'com.saicone.ezlib.asm.9.7'
+    relocate 'me.lucko.jarrelocator', 'com.saicone.ezlib.relocator.1.7'
 }
