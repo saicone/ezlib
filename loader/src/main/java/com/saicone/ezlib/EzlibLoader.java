@@ -557,9 +557,9 @@ public class EzlibLoader {
             return false;
         }
         try {
-            boolean repository = loadRepository(Repository.ofAnnotation(clazz.getAnnotation(com.saicone.ezlib.Repository.class)));
-            boolean dependency = loadDependency(Dependency.ofAnnotation(clazz.getAnnotation(com.saicone.ezlib.Dependency.class)));
-            Dependencies dependencies = Dependencies.ofAnnotation(clazz.getAnnotation(com.saicone.ezlib.Dependencies.class));
+            boolean repository = loadRepository(Repository.valueOf(clazz.getAnnotation(com.saicone.ezlib.Repository.class)));
+            boolean dependency = loadDependency(Dependency.valueOf(clazz.getAnnotation(com.saicone.ezlib.Dependency.class)));
+            Dependencies dependencies = Dependencies.valueOf(clazz.getAnnotation(com.saicone.ezlib.Dependencies.class));
             return (dependencies != null && dependencies.load(this)) || repository || dependency;
         } catch (NoClassDefFoundError e) {
             USE_ANNOTATIONS = false;
@@ -843,14 +843,14 @@ public class EzlibLoader {
         // Check if dependency uses version path and get it from maven metadata
         Dependency modified = null;
         if (path[2].charAt(0) == '@' && parseVersionPath(path, repository.url, shouldExist)) {
-            modified = Dependency.of(String.join(":", path)).relocate(dependency.relocate);
+            modified = Dependency.valueOf(String.join(":", path)).relocate(dependency.relocate);
         }
         // Check if dependency is snapshot to get file version from maven metadata
         final boolean lookSnapshot = dependency.snapshot;
         final boolean hasFileVersion = path[2].indexOf('@') > 0;
         if (lookSnapshot && !hasFileVersion) {
             if (parseSnapshot(path, repository.url, shouldExist)) {
-                modified = Dependency.of(String.join(":", path)).relocate(dependency.relocate);
+                modified = Dependency.valueOf(String.join(":", path)).relocate(dependency.relocate);
             } else {
                 logger.accept(2, "Dependency is marked has snapshot, but cannot find snapshot version from repository: " + repository);
             }
@@ -874,7 +874,7 @@ public class EzlibLoader {
             }
             // Try to find snapshot if isn't configured previously
             if (parseSnapshot(path, repository.url, false)) {
-                modified = Dependency.of(String.join(":", path)).relocate(dependency.relocate);
+                modified = Dependency.valueOf(String.join(":", path)).relocate(dependency.relocate);
                 // Ignore modified dependency if it was applied before
                 if (applied.contains(modified)) {
                     logger.accept(4, "The dependency " + modified.path + " is already applied into class loader");
@@ -981,7 +981,7 @@ public class EzlibLoader {
                 }
             }
             // Build sub-dependency with relocations
-            Dependency dep = Dependency.of(path).relocate(dependency.relocate);
+            Dependency dep = Dependency.valueOf(path).relocate(dependency.relocate);
             if (applied.contains(dep)) {
                 logger.accept(4, "The sub-dependency " + path + " is already applied into class loader");
                 continue;
@@ -1478,7 +1478,7 @@ public class EzlibLoader {
          * @return           a repository object represented by annotation, null otherwise.
          * @param <A>        annotation type.
          */
-        public static <A extends Annotation> Repository ofAnnotation(A annotation) {
+        public static <A extends Annotation> Repository valueOf(A annotation) {
             try {
                 if (!USE_ANNOTATIONS || !(annotation instanceof com.saicone.ezlib.Repository)) {
                     return null;
@@ -1493,6 +1493,14 @@ public class EzlibLoader {
                     .url(repo.url())
                     .format(repo.format())
                     .allowInsecureProtocol(repo.allowInsecureProtocol());
+        }
+
+        public static Repository valueOf(Map<String, Object> map) {
+            return new Repository()
+                    .name((String) map.get("name"))
+                    .url((String) map.get("url"))
+                    .format((String) map.getOrDefault("format", "%group%/%artifact%/%version%/%artifact%-%fileVersion%.%fileType%"))
+                    .allowInsecureProtocol((boolean) map.getOrDefault("allowInsecureProtocol", false));
         }
 
         /**
@@ -1599,7 +1607,7 @@ public class EzlibLoader {
          * @param path the dependency gradle-like path.
          * @return     a newly created dependency.
          */
-        public static Dependency of(String path) {
+        public static Dependency valueOf(String path) {
             return new Dependency().path(path);
         }
 
@@ -1611,7 +1619,7 @@ public class EzlibLoader {
          * @return           a {@link Dependency} object represented by annotation, null otherwise.
          * @param <A>        annotation type.
          */
-        public static <A extends Annotation> Dependency ofAnnotation(A annotation) {
+        public static <A extends Annotation> Dependency valueOf(A annotation) {
             try {
                 if (!USE_ANNOTATIONS || !(annotation instanceof com.saicone.ezlib.Dependency)) {
                     return null;
@@ -1623,7 +1631,7 @@ public class EzlibLoader {
             final com.saicone.ezlib.Dependency dep = (com.saicone.ezlib.Dependency) annotation;
             return new Dependency()
                     .path(dep.value())
-                    .repository(Repository.ofAnnotation(dep.repository()))
+                    .repository(Repository.valueOf(dep.repository()))
                     .inner(dep.inner())
                     .transitive(dep.transitive())
                     .snapshot(dep.snapshot())
@@ -1634,6 +1642,49 @@ public class EzlibLoader {
                     .condition(dep.condition())
                     .exclude(dep.exclude())
                     .relocate(dep.relocate());
+        }
+
+        @SuppressWarnings("unchecked")
+        public static Dependency valueOf(Map<String, Object> map) {
+            final Dependency dependency = new Dependency()
+                    .path((String) map.getOrDefault("path", map.get("value")))
+                    .inner((boolean) map.getOrDefault("inner", false))
+                    .transitive((boolean) map.getOrDefault("transitive", true))
+                    .snapshot((boolean) map.getOrDefault("snapshot", false))
+                    .loadOptional((boolean) map.getOrDefault("loadOptional", false))
+                    .optional((boolean) map.getOrDefault("optional", false));
+
+            final Map<String, Object> repository = (Map<String, Object>) map.get("repository");
+            if (repository != null && !repository.isEmpty()) {
+                dependency.repository(Repository.valueOf(repository));
+            }
+
+            final Collection<String> scopes = (Collection<String>) map.get("scopes");
+            if (scopes != null && !scopes.isEmpty()) {
+                dependency.scopes(new HashSet<>(scopes));
+            }
+
+            final Collection<String> test = (Collection<String>) map.get("test");
+            if (test != null && !test.isEmpty()) {
+                dependency.test(new HashSet<>(test));
+            }
+
+            final Collection<String> condition = (Collection<String>) map.get("condition");
+            if (condition != null && !condition.isEmpty()) {
+                dependency.condition(new HashSet<>(condition));
+            }
+
+            final Collection<String> exclude = (Collection<String>) map.get("exclude");
+            if (exclude != null && !exclude.isEmpty()) {
+                dependency.exclude(new HashSet<>(exclude));
+            }
+
+            final Collection<String> relocate = (Collection<String>) map.get("relocate");
+            if (relocate != null && !relocate.isEmpty()) {
+                dependency.relocate(relocate.toArray(new String[0]));
+            }
+
+            return dependency;
         }
 
         /**
@@ -1985,7 +2036,7 @@ public class EzlibLoader {
          * @return           a dependencies object represented by annotation, null otherwise.
          * @param <A>        annotation type.
          */
-        public static <A extends Annotation> Dependencies ofAnnotation(A annotation) {
+        public static <A extends Annotation> Dependencies valueOf(A annotation) {
             try {
                 if (!USE_ANNOTATIONS || !(annotation instanceof com.saicone.ezlib.Dependencies)) {
                     return null;
@@ -1996,9 +2047,31 @@ public class EzlibLoader {
             }
             final com.saicone.ezlib.Dependencies deps = (com.saicone.ezlib.Dependencies) annotation;
             return new Dependencies()
-                    .repositories(Arrays.stream(deps.repositories()).map(Repository::ofAnnotation).collect(Collectors.toList()))
-                    .dependencies(Arrays.stream(deps.value()).map(Dependency::ofAnnotation).collect(Collectors.toList()))
+                    .repositories(Arrays.stream(deps.repositories()).map(Repository::valueOf).collect(Collectors.toList()))
+                    .dependencies(Arrays.stream(deps.value()).map(Dependency::valueOf).collect(Collectors.toList()))
                     .relocations(parseRelocations(deps.relocations()));
+        }
+
+        @SuppressWarnings("unchecked")
+        public static Dependencies valueOf(Map<String, Object> map) {
+            final Dependencies result = new Dependencies();
+
+            final Collection<Map<String, Object>> repositories = (Collection<Map<String, Object>>) map.get("repositories");
+            if (repositories != null && !repositories.isEmpty()) {
+                result.repositories(repositories.stream().map(Repository::valueOf).collect(Collectors.toList()));
+            }
+
+            final Collection<Map<String, Object>> dependencies = (Collection<Map<String, Object>>) map.getOrDefault("dependencies", map.get("value"));
+            if (dependencies != null && !dependencies.isEmpty()) {
+                result.dependencies(dependencies.stream().map(Dependency::valueOf).collect(Collectors.toList()));
+            }
+
+            final Collection<String> relocations = (Collection<String>) map.get("relocations");
+            if (relocations != null && !relocations.isEmpty()) {
+                result.relocations(relocations.toArray(new String[0]));
+            }
+
+            return result;
         }
 
         /**
