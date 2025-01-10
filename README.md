@@ -15,6 +15,9 @@
     <a href="https://jitpack.io/#com.saicone/ezlib">
         <img src="https://jitpack.io/v/com.saicone/ezlib.svg?style=flat-square"/>
     </a>
+    <a href="https://javadoc.saicone.com/ezlib/">
+        <img src="https://img.shields.io/badge/JavaDoc-Online-green?style=flat-square"/>
+    </a>
     <a href="https://docs.saicone.com/ezlib/">
         <img src="https://img.shields.io/badge/Saicone-Ezlib%20Wiki-3b3bb0?logo=github&logoColor=white&style=flat-square"/>
     </a>
@@ -49,7 +52,7 @@ Take in count ezlib is made to be inside your project, so you must configure it 
 For Gradle Groovy project (build.gradle)
 ```groovy
 plugins {
-    id 'com.gradleup.shadow' version '8.3.1'
+    id 'com.gradleup.shadow' version '8.3.5'
 }
 
 repositories {
@@ -81,7 +84,7 @@ shadowJar {
   
   ```kotlin
   plugins {
-      id("com.gradleup.shadow") version "8.3.1"
+      id("com.gradleup.shadow") version "8.3.5"
   }
 
   repositories {
