@@ -47,3 +47,18 @@ publishing {
         }
     }
 }
+
+def javadocProjects= [
+        ':',
+        ':annotations',
+        ':loader'
+]
+
+tasks.register('allJavadoc', Javadoc) {
+    source javadocProjects.collect { project(it).sourceSets.main.allJava }
+    classpath = files(javadocProjects.collect { project(it).sourceSets.main.compileClasspath })
+    options {
+        links 'https://docs.oracle.com/en/java/javase/11/docs/api/'
+    }
+    destinationDir = file(project.layout.buildDirectory.dir('docs/all-javadoc'))
+}
