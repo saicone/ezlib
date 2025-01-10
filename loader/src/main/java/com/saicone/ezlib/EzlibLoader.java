@@ -19,7 +19,9 @@ import java.net.URL;
 import java.net.URLConnection;
 import java.util.*;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -47,7 +49,7 @@ public class EzlibLoader {
     private final List<Repository> repositories = new ArrayList<>();
     private final List<Dependency> dependencies = new ArrayList<>();
     private final Map<String, String> relocations = new HashMap<>();
-    private final Map<String, Predicate<String>> conditions = new HashMap<>();
+    private final Map<String, Condition<?>> conditions = new HashMap<>();
     private final Set<Dependency> applied = new HashSet<>();
 
     // Loader options
@@ -209,11 +211,11 @@ public class EzlibLoader {
      * Add a condition to loader.
      *
      * @param key       condition key.
-     * @param predicate predicate to evaluate condition parameters as String.
+     * @param condition the condition itself.
      * @return          the current ezlib loader.
      */
-    public EzlibLoader condition(String key, Predicate<String> predicate) {
-        conditions.put(key.toLowerCase(), predicate);
+    public EzlibLoader condition(String key, Condition<?> condition) {
+        conditions.put(key.toLowerCase(), condition);
         return this;
     }
 
@@ -373,8 +375,24 @@ public class EzlibLoader {
     public void initDefaultOptions() {
         repositories.add(new Repository().name("MavenCentral").url("https://repo.maven.apache.org/maven2/"));
         repositories.add(new Repository().name("Jitpack").url("https://jitpack.io/"));
+
+        final String version = System.getProperty("java.version");
+        final int java;
+        if (version.startsWith("1.")) {
+            java = Integer.parseInt(version.substring(2, 3));
+        } else {
+            int dot = version.indexOf(".");
+            if (dot != -1) {
+                java = Integer.parseInt(version.substring(0, dot));
+            } else {
+                java = Integer.parseInt(version);
+            }
+        }
+        conditions.put("java", Condition.valueOfInteger(() -> java));
+
         replaces.put("{}", ".");
         replaces.put("{package}", EzlibLoader.class.getPackage().getName());
+
         fileReaders.put("json", (reader, loader) -> {
             try {
                 final Class<?> clazz = Class.forName("com.google.gson.Gson");
@@ -525,7 +543,10 @@ public class EzlibLoader {
             }
             final String type;
             if (object instanceof Predicate && hasParams(field.getGenericType(), String.class)) {
-                conditions.put(field.getName().toLowerCase(), (Predicate<String>) object);
+                conditions.put(field.getName().toLowerCase(), Condition.valueOf((Predicate<String>) object));
+                type = "condition";
+            } else if (object instanceof Condition) {
+                conditions.put(field.getName().toLowerCase(), (Condition<?>) object);
                 type = "condition";
             } else if (object instanceof BiConsumer && hasParams(field.getGenericType(), Reader.class, EzlibLoader.class)) {
                 fileReaders.put(field.getName().toLowerCase().split("_")[0], (BiConsumer<Reader, EzlibLoader>) object);
@@ -1054,21 +1075,72 @@ public class EzlibLoader {
             return true;
         }
         for (String condition : conditions) {
-            final int index = condition.indexOf('=');
-            final String key;
-            final String value;
-            if (index > 0 && index + 1 < condition.length()) {
-                key = condition.substring(0, index).toLowerCase().trim();
-                value = condition.substring(index + 1).trim();
-            } else {
-                key = condition.toLowerCase();
-                value = "";
-            }
-            if (this.conditions.containsKey(key) && !this.conditions.get(key).test(value)) {
+            if (Boolean.FALSE.equals(eval(condition))) {
                 return false;
             }
         }
         return true;
+    }
+
+    /**
+     * Evaluate the provided condition script.
+     *
+     * @param s the condition to eval.
+     * @return  true if meet condition, false if not and {@code null} if condition doesn't exist.
+     */
+    public Boolean eval(String s) {
+        String name = s.trim();
+        String value;
+        if (name.startsWith("!")) {
+            s = name.substring(1);
+            name = name.substring(1);
+            value = "false";
+        } else {
+            value = "true";
+        }
+        int expected = Condition.EQUAL;
+        for (int i = 0; i < s.length(); i++) {
+            final char c = s.charAt(i);
+            if (c == '=' || c == '!' || c == '>' || c == '<') {
+                name = s.substring(0, i).trim();
+
+                final int start;
+                final String comparator;
+                if (i + 1 < s.length() && s.charAt(i + 1) == '=') {
+                    start = i + 2;
+                    comparator = c + "=";
+                } else {
+                    start = i + 1;
+                    comparator = String.valueOf(c);
+                }
+
+                value = s.substring(start).trim();
+
+                switch (comparator) {
+                    case ">":
+                        expected = Condition.GREATER;
+                        break;
+                    case ">=":
+                        expected = Condition.GREATER_OR_EQUAL;
+                        break;
+                    case "<=":
+                    case "!":
+                    case "!=":
+                        expected = Condition.LESS_OR_EQUAL;
+                        break;
+                    case "<":
+                        expected = Condition.LESS;
+                        break;
+                }
+                i++;
+            }
+        }
+
+        final Condition<?> condition = this.conditions.get(name.toLowerCase());
+        if (condition == null) {
+            return null;
+        }
+        return condition.eval(expected, value);
     }
 
     /**
@@ -1495,6 +1567,12 @@ public class EzlibLoader {
                     .allowInsecureProtocol(repo.allowInsecureProtocol());
         }
 
+        /**
+         * Convert repository map representation into {@link Repository}.
+         *
+         * @param map the map to deserialize.
+         * @return    a repository object represented by map.
+         */
         public static Repository valueOf(Map<String, Object> map) {
             return new Repository()
                     .name((String) map.get("name"))
@@ -1644,6 +1722,12 @@ public class EzlibLoader {
                     .relocate(dep.relocate());
         }
 
+        /**
+         * Convert dependency map representation into {@link Dependency}.
+         *
+         * @param map the map to deserialize.
+         * @return    a dependency object represented by map.
+         */
         @SuppressWarnings("unchecked")
         public static Dependency valueOf(Map<String, Object> map) {
             final Dependency dependency = new Dependency()
@@ -2052,6 +2136,12 @@ public class EzlibLoader {
                     .relocations(parseRelocations(deps.relocations()));
         }
 
+        /**
+         * Convert dependencies map representation into {@link Dependencies}.
+         *
+         * @param map the map to deserialize.
+         * @return    a dependencies object represented by map.
+         */
         @SuppressWarnings("unchecked")
         public static Dependencies valueOf(Map<String, Object> map) {
             final Dependencies result = new Dependencies();
@@ -2149,6 +2239,194 @@ public class EzlibLoader {
             boolean repository = loader.loadRepositories(repositories);
             boolean dependency = loader.loadDependencies(dependencies);
             return relocation || repository || dependency;
+        }
+    }
+
+    /**
+     * Supplied condition script evaluator.
+     *
+     * @param <T> the type of objects that may be compared.
+     */
+    public static class Condition<T> {
+
+        /**
+         * Expected value representation for number less than actual value.
+         */
+        public static final int LESS = -2;
+        /**
+         * Expected value representation for number less than or equal to actual value.
+         */
+        public static final int LESS_OR_EQUAL = -1;
+        /**
+         * Expected value representation for number equal than actual value.
+         */
+        public static final int EQUAL = 0;
+        /**
+         * Expected value representation for number greater than or equal to actual value.
+         */
+        public static final int GREATER_OR_EQUAL = 1;
+        /**
+         * Expected value representation for number greater than actual value.
+         */
+        public static final int GREATER = 2;
+
+        private static final Condition<Boolean> TRUE = new Condition<>(s -> s.equals("true"), b -> b ? 0 : -1);
+        private static final Condition<Boolean> FALSE = new Condition<>(s -> s.equals("false"), b -> b ? 0 : -1);
+
+        private final Function<String, T> mapper;
+        private final Function<T, Integer> comparator;
+
+        /**
+         * Create a condition with a defined boolean value.
+         *
+         * @param bool the value that represent the state of the condition.
+         * @return     a newly generated condition.
+         */
+        public static Condition<Boolean> valueOf(boolean bool) {
+            return bool ? TRUE : FALSE;
+        }
+
+        /**
+         * Create a condition using a string comparator.
+         *
+         * @param condition the comparator that evaluates a string.
+         * @return          a newly generated condition.
+         */
+        public static Condition<String> valueOf(Predicate<String> condition) {
+            return new Condition<>(s -> s, s -> condition.test(s) ? 0 : -1);
+        }
+
+        /**
+         * Create a condition that compares a supplied byte value.
+         *
+         * @param supplier the supplier that return the expected value.
+         * @return         a newly generated condition.
+         */
+        public static Condition<Byte> valueOfByte(Supplier<Byte> supplier) {
+            return new Condition<>(Byte::parseByte, x -> {
+               final byte y = supplier.get();
+               return Byte.compare(x, y);
+            });
+        }
+
+        /**
+         * Create a condition that compares a supplied short value.
+         *
+         * @param supplier the supplier that return the expected value.
+         * @return         a newly generated condition.
+         */
+        public static Condition<Short> valueOfShort(Supplier<Short> supplier) {
+            return new Condition<>(Short::parseShort, x -> {
+                final short y = supplier.get();
+                return Short.compare(x, y);
+            });
+        }
+
+        /**
+         * Create a condition that compares a supplied integer value.
+         *
+         * @param supplier the supplier that return the expected value.
+         * @return         a newly generated condition.
+         */
+        public static Condition<Integer> valueOfInteger(Supplier<Integer> supplier) {
+            return new Condition<>(Integer::parseInt, x -> {
+                final int y = supplier.get();
+                return Integer.compare(x, y);
+            });
+        }
+
+        /**
+         * Create a condition that compares a supplied long value.
+         *
+         * @param supplier the supplier that return the expected value.
+         * @return         a newly generated condition.
+         */
+        public static Condition<Long> valueOfLong(Supplier<Long> supplier) {
+            return new Condition<>(Long::parseLong, x -> {
+                final long y = supplier.get();
+                return Long.compare(x, y);
+            });
+        }
+
+        /**
+         * Create a condition that compares a supplied float value.
+         *
+         * @param supplier the supplier that return the expected value.
+         * @return         a newly generated condition.
+         */
+        public static Condition<Float> valueOfFloat(Supplier<Float> supplier) {
+            return new Condition<>(Float::parseFloat, x -> {
+                final float y = supplier.get();
+                return Float.compare(x, y);
+            });
+        }
+
+        /**
+         * Create a condition that compares a supplied double value.
+         *
+         * @param supplier the supplier that return the expected value.
+         * @return         a newly generated condition.
+         */
+        public static Condition<Double> valueOfDouble(Supplier<Double> supplier) {
+            return new Condition<>(Double::parseDouble, x -> {
+                final double y = supplier.get();
+                return Double.compare(x, y);
+            });
+        }
+
+        /**
+         * Constructs a condition using the provided string mapper and type comparator.
+         *
+         * @param mapper     the mapper function that convert string into required value.
+         * @param comparator the comparator that return a negative integer, zero, or a positive integer as the first
+         *                   argument is less than, equal to, or greater than the expected value.
+         */
+        public Condition(Function<String, T> mapper, Function<T, Integer> comparator) {
+            this.mapper = mapper;
+            this.comparator = comparator;
+        }
+
+        /**
+         * Get the mapper function that convert string into required value.
+         *
+         * @return a string mapper.
+         */
+        public Function<String, T> getMapper() {
+            return mapper;
+        }
+
+        /**
+         * Get the comparator that return a negative integer, zero, or a positive integer as the first
+         * argument is less than, equal to, or greater than the expected value.
+         *
+         * @return a type comparator function.
+         */
+        public Function<T, Integer> getComparator() {
+            return comparator;
+        }
+
+        /**
+         * Evaluate if expected result is the same after compare converted string value.
+         *
+         * @param expected the expected result of comparator function.
+         * @param s        the string to convert and evaluate.
+         * @return         true if the expected result is the same as the actual result.
+         */
+        public boolean eval(int expected, String s) {
+            final T value;
+            try {
+                value = getMapper().apply(s);
+            } catch (Throwable t) {
+                return false;
+            }
+            final int result = getComparator().apply(value);
+            if (result < 0) {
+                return expected < 0;
+            } else if (result > 0) {
+                return expected > 0;
+            } else {
+                return expected == LESS_OR_EQUAL || expected == EQUAL || expected == GREATER_OR_EQUAL;
+            }
         }
     }
 }
