@@ -389,6 +389,7 @@ public class EzlibLoader {
             }
         }
         conditions.put("java", Condition.valueOfInteger(() -> java));
+        conditions.put("java.version", Condition.valueOfInteger(() -> java));
 
         replaces.put("{}", ".");
         replaces.put("{package}", EzlibLoader.class.getPackage().getName());
