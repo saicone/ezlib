@@ -321,7 +321,7 @@ public class Ezlib {
         if (dependency.relocations != null && !dependency.relocations.isEmpty()) {
             Path path;
             try {
-                path = Files.createTempFile(file.getName() + '.' + Math.abs(dependency.relocations.hashCode()), ".tmp");
+                path = Files.createTempFile(file.getName() + '.' + Math.abs(dependency.relocations.hashCode()), ".jar");
             } catch (IOException e) {
                 throw new RuntimeException("Cannot create temporary file for relocated dependency", e);
             }
@@ -347,7 +347,7 @@ public class Ezlib {
         } else if (pathMapper != null) {
             Path path;
             try {
-                path = Files.createTempFile(file.getName() + '.' + Math.abs(file.hashCode()), ".tmp");
+                path = Files.createTempFile(file.getName() + '.' + Math.abs(file.hashCode()), ".jar");
             } catch (IOException e) {
                 throw new RuntimeException("Cannot create temporary file for mapped dependency", e);
             }
