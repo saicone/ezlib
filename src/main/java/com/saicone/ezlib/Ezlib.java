@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.StringJoiner;
+import java.util.function.UnaryOperator;
 
 /**
  * <p>Ezlib class to load, download &amp; append libraries into class path.<br>
@@ -56,6 +57,7 @@ public class Ezlib {
     private ClassLoader parentClassLoader = Ezlib.class.getClassLoader();
     private String defaultRepository = "https://repo.maven.apache.org/maven2/";
     private boolean pathSave = true;
+    private UnaryOperator<Path> pathMapper = null;
 
     /**
      * Constructs an Ezlib using default libs folder at root path.
@@ -121,6 +123,15 @@ public class Ezlib {
     }
 
     /**
+     * Get the path mapper that is used with loaded dependencies.
+     *
+     * @return a unary operator that convert paths.
+     */
+    public UnaryOperator<Path> getPathMapper() {
+        return pathMapper;
+    }
+
+    /**
      * Gets if the current ezlib is saving dependencies into sub folders.
      *
      * @return true if it is saving into sub folders.
@@ -155,6 +166,17 @@ public class Ezlib {
      */
     public Ezlib setDefaultRepository(String defaultRepository) {
         this.defaultRepository = defaultRepository;
+        return this;
+    }
+
+    /**
+     * Set the path mapper that is used with loaded dependencies.
+     *
+     * @param pathMapper a unary operator that convert paths.
+     * @return Current Ezlib instance.
+     */
+    public Ezlib setPathMapper(UnaryOperator<Path> pathMapper) {
+        this.pathMapper = pathMapper;
         return this;
     }
 
@@ -304,11 +326,41 @@ public class Ezlib {
                 throw new RuntimeException("Cannot create temporary file for relocated dependency", e);
             }
             path.toFile().deleteOnExit();
+
             try {
                 loader.relocate(file, path.toFile(), dependency.relocations);
             } catch (Throwable t) {
                 throw new RuntimeException("Cannot relocate dependency");
             }
+
+            if (pathMapper != null) {
+                final Path result = pathMapper.apply(path);
+                if (!path.equals(result)) {
+                    try {
+                        Files.delete(path);
+                    } catch (IOException ignored) { }
+                }
+                path = result;
+            }
+
+            file = path.toFile();
+        } else if (pathMapper != null) {
+            Path path;
+            try {
+                path = Files.createTempFile(file.getName() + '.' + Math.abs(file.hashCode()), ".tmp");
+            } catch (IOException e) {
+                throw new RuntimeException("Cannot create temporary file for mapped dependency", e);
+            }
+            path.toFile().deleteOnExit();
+
+            final Path result = pathMapper.apply(path);
+            if (!path.equals(result)) {
+                try {
+                    Files.delete(path);
+                } catch (IOException ignored) { }
+            }
+            path = result;
+
             file = path.toFile();
         }
 
