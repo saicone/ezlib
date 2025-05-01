@@ -5,10 +5,10 @@ plugins {
 dependencies {
     api rootProject
     compileOnlyApi project(':annotations')
-    compileOnly 'com.google.code.gson:gson:2.11.0'
-    compileOnly 'org.yaml:snakeyaml:2.3'
+    compileOnly 'com.google.code.gson:gson:2.13.1'
+    compileOnly 'org.yaml:snakeyaml:2.4'
 
-    testImplementation(platform('org.junit:junit-bom:5.11.4'))
+    testImplementation(platform('org.junit:junit-bom:5.12.2'))
     testImplementation('org.junit.jupiter:junit-jupiter')
     testRuntimeOnly('org.junit.platform:junit-platform-launcher')
 }
