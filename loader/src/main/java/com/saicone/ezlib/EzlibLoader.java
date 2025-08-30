@@ -804,6 +804,7 @@ public class EzlibLoader {
                 // Use first repository
                 for (Repository r : this.repositories) {
                     repo = r;
+                    break;
                 }
                 // Use default repository
                 if (repo == null) {
