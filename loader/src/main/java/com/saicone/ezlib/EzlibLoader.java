@@ -9,6 +9,13 @@ import org.xml.sax.SAXException;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.transform.OutputKeys;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerConfigurationException;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
 import java.io.*;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
@@ -975,13 +982,15 @@ public class EzlibLoader {
         loadRepositories(pom);
 
         int count = 0;
+        int index = -1;
         Element element = pom.getDocumentElement();
         // Document path: dependencies.dependency[]
         for (Element eDependency : xmlParser.getElements(element, "dependency", "dependencies")) {
+            index++;
             // Parse dependency path
             String path = parsePath(element, eDependency, false);
             if (path == null) {
-                logger.accept(4, "The sub-dependency " + (count + 1) + " contains invalid parameters");
+                logger.accept(4, "The sub-dependency " + (index + 1) + " contains invalid parameters: " + xmlParser.toString(eDependency));
                 continue;
             }
             // Avoid invalid scopes
@@ -1208,7 +1217,7 @@ public class EzlibLoader {
         path[2] = text;
         return true;
     }
-    
+
     private boolean parseSnapshot(String[] path, String repository, boolean shouldExist) {
         final String url = ezlib.parseRepository(repository) + path[0].replace(".", "/") + '/' + path[1] + '/' + path[2] + "/maven-metadata.xml";
         Document ver = null;
@@ -1256,15 +1265,26 @@ public class EzlibLoader {
         String version = xmlParser.getTextContent(document, dependency, "version");
         if (acceptInvalid) {
             if (isInvalid(groupId)) {
+                logger.accept(4, "Invalid group ID from xml = " + groupId);
                 return null;
             }
             if (isInvalid(artifactId)) {
+                logger.accept(4, "Invalid artifact ID from xml = " + artifactId);
                 return groupId;
             } else {
                 return groupId + ":" + artifactId + (isInvalid(version) ? "" : ":" + version);
             }
         }
-        if (isInvalid(groupId) || isInvalid(artifactId) || isInvalid(version)) {
+        if (isInvalid(groupId)) {
+            logger.accept(4, "Invalid group ID from xml = " + groupId);
+            return null;
+        }
+        if (isInvalid(artifactId)) {
+            logger.accept(4, "Invalid artifact ID from xml = " + groupId);
+            return null;
+        }
+        if (isInvalid(version)) {
+            logger.accept(4, "Invalid version from xml = " + groupId);
             return null;
         }
         return groupId + ':' + artifactId + ':' + version;
@@ -1310,22 +1330,25 @@ public class EzlibLoader {
      */
     public static class XmlParser {
         private final DocumentBuilder docBuilder;
+        private final Transformer transformer;
 
 
         /**
-         * Constructs a XML parser with default document builder.
+         * Constructs a XML parser with default parameters.
          */
         public XmlParser() {
-            this(defaultBuilder());
+            this(defaultBuilder(), defaultTransformer());
         }
 
         /**
-         * Consturcts a XML parser with provided document builder.
+         * Consturcts a XML parser with provided parameters.
          *
-         * @param docBuilder the document builder to use.
+         * @param docBuilder  the document builder to use.
+         * @param transformer the element transformer to use.
          */
-        public XmlParser(DocumentBuilder docBuilder) {
+        public XmlParser(DocumentBuilder docBuilder, Transformer transformer) {
             this.docBuilder = docBuilder;
+            this.transformer = transformer;
         }
 
         private static DocumentBuilder defaultBuilder() {
@@ -1337,6 +1360,17 @@ public class EzlibLoader {
                 return factory.newDocumentBuilder();
             } catch (ParserConfigurationException e) {
                 throw new RuntimeException("Cannot initialize document builder", e);
+            }
+        }
+
+        private static Transformer defaultTransformer() {
+            try {
+                Transformer transformer = TransformerFactory.newInstance().newTransformer();
+                transformer.setOutputProperty(OutputKeys.INDENT, "no");
+                transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
+                return transformer;
+            } catch (TransformerConfigurationException e) {
+                throw new RuntimeException("Cannot initialize transformer", e);
             }
         }
 
@@ -1532,6 +1566,15 @@ public class EzlibLoader {
                 s = matcher.replaceFirst(String.valueOf(getTextContent(document, document, match.split("\\."))));
             }
             return s;
+        }
+
+        public String toString(Element element) {
+            try (Writer writer = new StringWriter()) {
+                transformer.transform(new DOMSource(element), new StreamResult(writer));
+                return writer.toString();
+            } catch (IOException | TransformerException e) {
+                throw new RuntimeException("Cannot convert Element to String", e);
+            }
         }
     }
 
@@ -2306,8 +2349,8 @@ public class EzlibLoader {
          */
         public static Condition<Byte> valueOfByte(Supplier<Byte> supplier) {
             return new Condition<>(Byte::parseByte, x -> {
-               final byte y = supplier.get();
-               return Byte.compare(x, y);
+                final byte y = supplier.get();
+                return Byte.compare(x, y);
             });
         }
 
