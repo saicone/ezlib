@@ -41,35 +41,49 @@ ezlib.dependency("commons-io:commons-io:2.11.0").parent(true).load();
 ezlib.dependency("com.saicone.rtag:rtag:1.3.0").repository("https://jitpack.io/").load();
 ```
 
-## Get Ezlib
+## Dependency
 
-### Requirements
-*  Minimum Java 8
+How to implement ezlib in your project.
 
-### Project build
-Take in count ezlib is made to be inside your project, so you must configure it as shaded dependency.
+This library contains the following artifacts:
 
-For Gradle Groovy project (build.gradle)
+* `ezlib` - The main project, supports:
+  1. Load dependencies from repositories.
+  2. Dependency relocation.
+  3. Dependency file mapper, for example, apply transformations to source code before appending it to classpath.
+* `loader` - An extensive library loader (that also use `ezlib` module), supports:
+  1. Transitive dependencies.
+  2. Snapshot dependencies.
+  3. Optional dependencies.
+  4. Dependency scope filter.
+  5. Testing dependency classes before loading.
+  6. Dependency version provided by path, for example, use `@latest` to get the latest version from `maven-metadata.xml`.
+  7. Dependency loading from configuration file (JSON and YAML are supported by default).
+  8. Dependency loading from class constant declaration.
+  9. Conditional functions to filter dependencies based on runtime variables, for example, use `java.version >= 17` to only load on Java +17.
+* `annotations` - An annotation processor to declare dependencies and generate resources for `loader` module.
+* `internal` - The internal code that actually load the classes on runtime, not made for users.
+
+Project build examples:
+
+<details>
+  <summary>build.gradle</summary>
+
 ```groovy
 plugins {
-    id 'com.gradleup.shadow' version '8.3.5'
+    id 'com.gradleup.shadow' version '9.3.1'
 }
 
 repositories {
-    maven { url 'https://jitpack.io' }
+    maven { url = uri('https://jitpack.io') }
 }
 
-// Use only ezlib
 dependencies {
-    implementation 'com.saicone.ezlib:ezlib:VERSION'
-}
-
-// Use ezlib loader instead
-dependencies {
-    implementation 'com.saicone.ezlib:loader:VERSION'
-    // Use annotations
-    compileOnly 'com.saicone.ezlib:annotations:VERSION'
-    annotationProcessor 'com.saicone.ezlib:annotations:VERSION'
+    implementation 'com.saicone.ezlib:ezlib:1.3.3'
+    implementation 'com.saicone.ezlib:loader:1.3.3'
+    // The annotation module should be implemented as annotation processor
+    compileOnly 'com.saicone.ezlib:annotations:1.3.3'
+    annotationProcessor 'com.saicone.ezlib:annotations:1.3.3'
 }
 
 jar.dependsOn (shadowJar)
@@ -78,109 +92,105 @@ shadowJar {
     relocate 'com.saicone.ezlib', project.group + '.ezlib'
 }
 ```
-
-<details>
-  <summary>For Gradle Kotlin project (build.gradle.kts)</summary>
-  
-  ```kotlin
-  plugins {
-      id("com.gradleup.shadow") version "8.3.5"
-  }
-
-  repositories {
-      maven("https://jitpack.io")
-  }
-
-  // Use only ezlib
-  dependencies {
-      implementation("com.saicone.ezlib:ezlib:VERSION")
-  }
-
-  // Use ezlib loader instead
-  dependencies {
-      implementation("com.saicone.ezlib:loader:VERSION")
-      // Use annotations
-      compileOnly("com.saicone.ezlib:annotations:VERSION")
-      annotationProcessor("com.saicone.ezlib:annotations:VERSION")
-  }
-
-  tasks {
-      jar {
-          dependsOn(tasks.shadowJar)
-      }
-
-      shadowJar {
-          relocate("com.saicone.ezlib", "${project.group}.ezlib")
-      }
-  }
-  ```
 </details>
 
 <details>
-  <summary>For Maven project (pom.xml)</summary>
-  
-  ```xml
-  <repositories>
-      <repository>
-          <id>Jitpack</id>
-          <url>https://jitpack.io</url>
-      </repository>
-  </repositories>
+  <summary>build.gradle.kts</summary>
 
-  <dependencies>
-      <!-- Use ezlib -->
-      <dependency>
-          <groupId>com.saicone.ezlib</groupId>
-          <artifactId>ezlib</artifactId>
-          <version>VERSION</version>
-          <scope>compile</scope>
-      </dependency>
-      <!-- Use ezlib loader -->
-      <dependency>
-          <groupId>com.saicone.ezlib</groupId>
-          <artifactId>loader</artifactId>
-          <version>VERSION</version>
-          <scope>compile</scope>
-      </dependency>
-      <!-- Use annotations -->
-      <dependency>
-          <groupId>com.saicone.ezlib</groupId>
-          <artifactId>annotations</artifactId>
-          <version>VERSION</version>
-          <scope>provided</scope>
-      </dependency>
-  </dependencies>
+```kotlin
+plugins {
+    id("com.gradleup.shadow") version "9.3.1"
+}
 
-  <build>
-      <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-shade-plugin</artifactId>
-          <version>3.3.0</version>
-          <configuration>
-              <artifactSet>
-                  <includes>
-                      <include>com.saicone.ezlib:ezlib</include>
-                      <include>com.saicone.ezlib:loader</include>
-                  </includes>
-              </artifactSet>
-              <relocations>
-                  <relocation>
-                      <pattern>com.saicone.ezlib</pattern>
-                      <shadedPattern>${project.groupId}.ezlib</shadedPattern>
-                  </relocation>
-              </relocations>
-          </configuration>
-          <executions>
-              <execution>
-                  <phase>package</phase>
-                  <goals>
-                      <goal>shade</goal>
-                  </goals>
-              </execution>
-          </executions>
-      </plugin>
-  </build>
-  ```
+repositories {
+    maven("https://jitpack.io")
+}
+
+dependencies {
+    implementation("com.saicone.ezlib:ezlib:1.3.3")
+    implementation("com.saicone.ezlib:loader:1.3.3")
+    // The annotation module should be implemented as annotation processor
+    compileOnly("com.saicone.ezlib:annotations:1.3.3")
+    annotationProcessor("com.saicone.ezlib:annotations:1.3.3")
+}
+
+tasks {
+    jar {
+        dependsOn(tasks.shadowJar)
+    }
+
+    shadowJar {
+        relocate("com.saicone.ezlib", "${project.group}.ezlib")
+    }
+}
+```
+</details>
+
+<details>
+  <summary>pom.xml</summary>
+
+```xml
+<repositories>
+    <repository>
+        <id>Jitpack</id>
+        <url>https://jitpack.io</url>
+    </repository>
+</repositories>
+
+<dependencies>
+<!-- Use ezlib -->
+<dependency>
+    <groupId>com.saicone.ezlib</groupId>
+    <artifactId>ezlib</artifactId>
+    <version>1.3.3</version>
+    <scope>compile</scope>
+</dependency>
+<!-- Use ezlib loader -->
+<dependency>
+    <groupId>com.saicone.ezlib</groupId>
+    <artifactId>loader</artifactId>
+    <version>1.3.3</version>
+    <scope>compile</scope>
+</dependency>
+<!-- Use annotations -->
+<dependency>
+    <groupId>com.saicone.ezlib</groupId>
+    <artifactId>annotations</artifactId>
+    <version>1.3.3</version>
+    <scope>provided</scope>
+</dependency>
+</dependencies>
+
+<build>
+<plugin>
+    <groupId>org.apache.maven.plugins</groupId>
+    <artifactId>maven-shade-plugin</artifactId>
+    <version>3.6.1</version>
+    <configuration>
+        <artifactSet>
+            <includes>
+                <include>com.saicone.ezlib:ezlib</include>
+                <include>com.saicone.ezlib:loader</include>
+            </includes>
+        </artifactSet>
+        <relocations>
+            <relocation>
+                <pattern>com.saicone.ezlib</pattern>
+                <shadedPattern>${project.groupId}.ezlib</shadedPattern>
+            </relocation>
+        </relocations>
+    </configuration>
+    <executions>
+        <execution>
+            <phase>package</phase>
+            <goals>
+                <goal>shade</goal>
+            </goals>
+        </execution>
+    </executions>
+</plugin>
+</build>
+```
 </details>
 
 ## Features
@@ -206,7 +216,7 @@ Ezlib uses [jar-relocator](https://github.com/lucko/jar-relocator), so you can l
 
 Here an example with Redis library and all the needed dependencies.
 ```java
-Map<String, String> map = new HashMap();
+Map<String, String> map = new HashMap<>();
 map.put("com.google.gson", "myproject.path.libs.gson");
 map.put("org.apache.commons.pool2", "myproject.path.libs.pool2");
 map.put("org.json", "myproject.path.libs.json");
