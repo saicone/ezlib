@@ -2,14 +2,6 @@ plugins {
     id 'com.gradleup.shadow'
 }
 
-publishing {
-    publications {
-        shadow(MavenPublication) {
-            artifact shadowJar
-        }
-    }
-}
-
 dependencies {
     implementation('me.lucko:jar-relocator:1.7') { transitive = false }
     implementation 'org.ow2.asm:asm-commons:9.8'
@@ -25,4 +17,12 @@ shadowJar {
     relocate 'com.saicone.ezlib.internal', 'com.saicone.ezlib.internal.' + (System.getenv("VERSION") ?: project.version)
     relocate 'org.objectweb.asm', 'com.saicone.ezlib.asm.9.8'
     relocate 'me.lucko.jarrelocator', 'com.saicone.ezlib.relocator.1.7'
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.shadow
+        }
+    }
 }

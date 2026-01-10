@@ -1,6 +1,5 @@
 plugins {
-    id 'com.gradleup.shadow' version '8.3.5' apply false
-    id 'net.kyori.blossom' version '1.3.1'
+    id 'com.gradleup.shadow' version '9.3.1'
 }
 
 allprojects {
@@ -30,20 +29,32 @@ allprojects {
         withSourcesJar()
         withJavadocJar()
     }
+
+    publishing {
+        publications {
+            maven(MavenPublication) {
+                groupId project.group
+                artifactId project.name
+                version project.version
+            }
+        }
+    }
 }
 
-blossom {
-    replaceTokenIn('src/main/java/com/saicone/ezlib/Ezlib.java')
-    replaceToken '${version}', System.getenv("VERSION") ?: project.version
+jar {
+    enabled = false
+    dependsOn (shadowJar)
+}
+
+shadowJar {
+    archiveClassifier.set('')
+    relocate 'project.version', (System.getenv("VERSION") ?: project.version)
 }
 
 publishing {
     publications {
         maven(MavenPublication) {
-            groupId project.group
-            artifactId project.name
-            version project.version
-            from components.java
+            from components.shadow
         }
     }
 }
