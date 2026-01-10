@@ -2,6 +2,8 @@ plugins {
     id 'java-library'
 }
 
+description = 'Ezlib Annotations'
+
 java {
     sourceSets.named('main').get().java {
         srcDir('src/ap/java')

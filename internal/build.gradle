@@ -2,6 +2,8 @@ plugins {
     id 'com.gradleup.shadow'
 }
 
+description = 'Ezlib Internal'
+
 dependencies {
     implementation('me.lucko:jar-relocator:1.7') { transitive = false }
     implementation 'org.ow2.asm:asm-commons:9.8'
@@ -23,6 +25,11 @@ publishing {
     publications {
         maven(MavenPublication) {
             from components.shadow
+
+            afterEvaluate {
+                artifact tasks.named('sourcesJar')
+                artifact tasks.named('javadocJar')
+            }
         }
     }
 }

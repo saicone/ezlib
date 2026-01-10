@@ -1,0 +1,51 @@
+apply plugin: 'maven-publish'
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            groupId = project.group
+            artifactId = project.name
+            version = project.version
+
+            pom {
+                afterEvaluate {
+                    name = project.description
+                    description = project.description
+                }
+                url = 'https://github.com/saicone/ezlib'
+
+                organization {
+                    name = 'saicone'
+                    url = 'https://github.com/saicone'
+                }
+
+                licenses {
+                    license {
+                        name = 'MIT License'
+                        url = 'https://opensource.org/license/MIT'
+                        distribution = 'repo'
+                    }
+                }
+
+                developers {
+                    developer {
+                        id = 'Rubenicos'
+                        name = 'Rubén Chavarría'
+                        email = 'ruben.chavarria@saicone.com'
+                    }
+                }
+
+                scm {
+                    connection = 'scm:git:git://github.com/saicone/ezlib.git'
+                    developerConnection = 'scm:git:ssh://github.com/saicone/ezlib.git'
+                    url = 'https://github.com/saicone/ezlib'
+                }
+
+                issueManagement {
+                    system = 'GitHub'
+                    url = 'https://github.com/saicone/ezlib/issues'
+                }
+            }
+        }
+    }
+}

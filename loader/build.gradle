@@ -2,6 +2,8 @@ plugins {
     id 'java-library'
 }
 
+description = 'Ezlib Loader'
+
 dependencies {
     api rootProject
     compileOnlyApi project(':annotations')
@@ -23,9 +25,6 @@ test {
 publishing {
     publications {
         maven(MavenPublication) {
-            groupId project.group
-            artifactId project.name
-            version project.version
             from components.java
         }
     }
