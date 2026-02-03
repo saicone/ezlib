@@ -57,7 +57,7 @@ public class EzlibLoader {
     private final List<Dependency> dependencies = new ArrayList<>();
     private final Map<String, String> relocations = new HashMap<>();
     private final Map<String, Condition<?>> conditions = new HashMap<>();
-    private final Set<Dependency> applied = new HashSet<>();
+    private final Set<Dependency> applied = Collections.synchronizedSet(new HashSet<>());
 
     // Loader options
     private BiConsumer<Integer, String> logger = (level, text) -> {};
@@ -363,7 +363,7 @@ public class EzlibLoader {
     /**
      * Initialize the current ezlib loader.
      */
-    public void init() {
+    public synchronized void init() {
         logger.accept(4, "Initializing EzlibLoader...");
         if (!ezlib.isInitialized()) {
             ezlib.init();
@@ -1329,24 +1329,37 @@ public class EzlibLoader {
      * The XML parser to handle documents.
      */
     public static class XmlParser {
-        private final DocumentBuilder docBuilder;
-        private final Transformer transformer;
 
+        private final Supplier<DocumentBuilder> docBuilder;
+        private final Supplier<Transformer> transformer;
 
         /**
-         * Constructs a XML parser with default parameters.
+         * Constructs an XML parser with default parameters.
          */
         public XmlParser() {
-            this(defaultBuilder(), defaultTransformer());
+            final ThreadLocal<DocumentBuilder> docBuilder = ThreadLocal.withInitial(XmlParser::defaultBuilder);
+            final ThreadLocal<Transformer> transformer = ThreadLocal.withInitial(XmlParser::defaultTransformer);
+            this.docBuilder = docBuilder::get;
+            this.transformer = transformer::get;
         }
 
         /**
-         * Consturcts a XML parser with provided parameters.
+         * Constructs an XML parser with provided parameters.
          *
          * @param docBuilder  the document builder to use.
          * @param transformer the element transformer to use.
          */
         public XmlParser(DocumentBuilder docBuilder, Transformer transformer) {
+            this(() -> docBuilder, () -> transformer);
+        }
+
+        /**
+         * Constructs an XML parser with provided parameters.
+         *
+         * @param docBuilder  the document builder supplier to use.
+         * @param transformer the element transformer supplier to use.
+         */
+        public XmlParser(Supplier<DocumentBuilder> docBuilder, Supplier<Transformer> transformer) {
             this.docBuilder = docBuilder;
             this.transformer = transformer;
         }
@@ -1386,7 +1399,7 @@ public class EzlibLoader {
             final URLConnection con = new URL(url).openConnection();
             con.addRequestProperty("Accept", "application/xml");
             con.addRequestProperty("User-Agent", "Mozilla/5.0");
-            return docBuilder.parse(con.getInputStream());
+            return getDocBuilder().parse(con.getInputStream());
         }
 
         /**
@@ -1398,7 +1411,7 @@ public class EzlibLoader {
          * @throws SAXException if any parse errors occur.
          */
         public Document fromFile(File file) throws IOException, SAXException {
-            return docBuilder.parse(file.toURI().toURL().openStream());
+            return getDocBuilder().parse(file.toURI().toURL().openStream());
         }
 
         /**
@@ -1407,7 +1420,20 @@ public class EzlibLoader {
          * @return a document builder.
          */
         public DocumentBuilder getDocBuilder() {
+            final DocumentBuilder docBuilder = this.docBuilder.get();
+            docBuilder.reset();
             return docBuilder;
+        }
+
+        /**
+         * Get transformed used on this instance.
+         *
+         * @return a transformer.
+         */
+        public Transformer getTransformer() {
+            final Transformer transformer = this.transformer.get();
+            transformer.reset();
+            return transformer;
         }
 
         /**
@@ -1570,7 +1596,7 @@ public class EzlibLoader {
 
         public String toString(Element element) {
             try (Writer writer = new StringWriter()) {
-                transformer.transform(new DOMSource(element), new StreamResult(writer));
+                getTransformer().transform(new DOMSource(element), new StreamResult(writer));
                 return writer.toString();
             } catch (IOException | TransformerException e) {
                 throw new RuntimeException("Cannot convert Element to String", e);
