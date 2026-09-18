@@ -5,7 +5,7 @@ plugins {
 description = 'Ezlib Loader'
 
 dependencies {
-    api rootProject
+    api project(':')
     compileOnlyApi project(':annotations')
     compileOnly 'com.google.code.gson:gson:2.13.2'
     compileOnly 'org.yaml:snakeyaml:2.5'
