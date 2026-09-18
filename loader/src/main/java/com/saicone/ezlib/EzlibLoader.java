@@ -60,7 +60,8 @@ public class EzlibLoader {
     private final Set<Dependency> applied = Collections.synchronizedSet(new HashSet<>());
 
     // Loader options
-    private BiConsumer<Integer, String> logger = (level, text) -> {};
+    private BiConsumer<Integer, String> logger = (level, text) -> {
+    };
     private final Map<String, String> replaces = new HashMap<>();
     private final Map<String, BiConsumer<Reader, EzlibLoader>> fileReaders = new HashMap<>();
 
@@ -182,7 +183,7 @@ public class EzlibLoader {
         if (files == null || (files.length > 0 && files[0] == null)) {
             this.files = new String[0];
         } else {
-            this.files = files.length < 1 ? new String[] {"ezlib-dependencies.json"} : files;
+            this.files = files.length < 1 ? new String[]{"ezlib-dependencies.json"} : files;
         }
         this.ezlib = ezlib;
         ezlib.setParentClassLoader(classLoader);
@@ -195,7 +196,7 @@ public class EzlibLoader {
      * Set the xml parser.
      *
      * @param xmlParser the xml parser instance to use.
-     * @return          the current ezlib loader.
+     * @return the current ezlib loader.
      */
     public EzlibLoader xmlParser(XmlParser xmlParser) {
         this.xmlParser = xmlParser;
@@ -207,7 +208,7 @@ public class EzlibLoader {
      *
      * @param pattern     the source pattern to relocate.
      * @param destination the destination package.
-     * @return            the current ezlib loader.
+     * @return the current ezlib loader.
      */
     public EzlibLoader relocate(String pattern, String destination) {
         relocations.put(pattern, destination);
@@ -219,7 +220,7 @@ public class EzlibLoader {
      *
      * @param key       condition key.
      * @param condition the condition itself.
-     * @return          the current ezlib loader.
+     * @return the current ezlib loader.
      */
     public EzlibLoader condition(String key, Condition<?> condition) {
         conditions.put(key.toLowerCase(), condition);
@@ -230,7 +231,7 @@ public class EzlibLoader {
      * Set the loader logger.
      *
      * @param logger consumer to accept log level and message.
-     * @return       the current ezlib loader.
+     * @return the current ezlib loader.
      */
     public EzlibLoader logger(BiConsumer<Integer, String> logger) {
         this.logger = logger;
@@ -242,7 +243,7 @@ public class EzlibLoader {
      *
      * @param target      the sequence of char values to be replaced
      * @param replacement the replacement sequence of char value
-     * @return            the current ezlib loader.
+     * @return the current ezlib loader.
      */
     public EzlibLoader replace(String target, String replacement) {
         replaces.put(target, replacement);
@@ -254,7 +255,7 @@ public class EzlibLoader {
      *
      * @param type       file type.
      * @param fileReader consumer that accept a reader with the actual ezlib loader.
-     * @return           the current ezlib loader.
+     * @return the current ezlib loader.
      */
     public EzlibLoader fileReader(String type, BiConsumer<Reader, EzlibLoader> fileReader) {
         fileReaders.put(type, fileReader);
@@ -304,6 +305,69 @@ public class EzlibLoader {
      */
     public XmlParser getXmlParser() {
         return xmlParser;
+    }
+
+    /**
+     * Get the loaded repositories.
+     *
+     * @return the loaded repositories.
+     */
+    public List<Repository> getRepositories() {
+        return repositories;
+    }
+
+    /**
+     * Get the loaded dependencies.
+     *
+     * @return the loaded dependencies.
+     */
+    public List<Dependency> getDependencies() {
+        return dependencies;
+    }
+
+    /**
+     * Get the loaded relocations.
+     *
+     * @return the loaded relocations.
+     */
+    public Map<String, String> getRelocations() {
+        return relocations;
+    }
+
+    /**
+     * Get the loaded conditions.
+     *
+     * @return the loaded conditions.
+     */
+    public Map<String, Condition<?>> getConditions() {
+        return conditions;
+    }
+
+    /**
+     * Get the logger.
+     *
+     * @return the logger.
+     */
+    public BiConsumer<Integer, String> getLogger() {
+        return logger;
+    }
+
+    /**
+     * Get the replacements.
+     *
+     * @return the replacements.
+     */
+    public Map<String, String> getReplaces() {
+        return replaces;
+    }
+
+    /**
+     * Get the file readers.
+     *
+     * @return the file readers.
+     */
+    public Map<String, BiConsumer<Reader, EzlibLoader>> getFileReaders() {
+        return fileReaders;
     }
 
     /**
