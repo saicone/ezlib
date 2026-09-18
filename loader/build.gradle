@@ -7,10 +7,10 @@ description = 'Ezlib Loader'
 dependencies {
     api project(':')
     compileOnlyApi project(':annotations')
-    compileOnly 'com.google.code.gson:gson:2.13.2'
-    compileOnly 'org.yaml:snakeyaml:2.5'
+    compileOnly 'com.google.code.gson:gson:2.14.0'
+    compileOnly 'org.yaml:snakeyaml:2.7'
 
-    testImplementation(platform('org.junit:junit-bom:5.14.2'))
+    testImplementation(platform('org.junit:junit-bom:5.14.4'))
     testImplementation('org.junit.jupiter:junit-jupiter')
     testRuntimeOnly('org.junit.platform:junit-platform-launcher')
 }
@@ -20,6 +20,7 @@ test {
     testLogging {
         events "passed", "skipped", "failed"
     }
+    failOnNoDiscoveredTests = false
 }
 
 publishing {
