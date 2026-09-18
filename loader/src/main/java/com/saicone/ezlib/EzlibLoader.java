@@ -590,7 +590,7 @@ public class EzlibLoader {
             boolean dependency = loadDependency(Dependency.valueOf(clazz.getAnnotation(com.saicone.ezlib.Dependency.class)));
             Dependencies dependencies = Dependencies.valueOf(clazz.getAnnotation(com.saicone.ezlib.Dependencies.class));
             return (dependencies != null && dependencies.load(this)) || repository || dependency;
-        } catch (NoClassDefFoundError e) {
+        } catch (Throwable e) {
             USE_ANNOTATIONS = false;
             return false;
         }
@@ -1070,7 +1070,7 @@ public class EzlibLoader {
                 Class.forName(parse(s));
             }
             return bool;
-        } catch (ClassNotFoundException e) {
+        } catch (Throwable e) {
             return !bool;
         }
     }
@@ -1626,7 +1626,7 @@ public class EzlibLoader {
                 if (!USE_ANNOTATIONS || !(annotation instanceof com.saicone.ezlib.Repository)) {
                     return null;
                 }
-            } catch (NoClassDefFoundError e) {
+            } catch (Throwable e) {
                 USE_ANNOTATIONS = false;
                 return null;
             }
@@ -1773,7 +1773,7 @@ public class EzlibLoader {
                 if (!USE_ANNOTATIONS || !(annotation instanceof com.saicone.ezlib.Dependency)) {
                     return null;
                 }
-            } catch (NoClassDefFoundError e) {
+            } catch (Throwable e) {
                 USE_ANNOTATIONS = false;
                 return null;
             }
@@ -2196,7 +2196,7 @@ public class EzlibLoader {
                 if (!USE_ANNOTATIONS || !(annotation instanceof com.saicone.ezlib.Dependencies)) {
                     return null;
                 }
-            } catch (NoClassDefFoundError e) {
+            } catch (Throwable e) {
                 USE_ANNOTATIONS = false;
                 return null;
             }
