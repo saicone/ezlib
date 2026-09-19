@@ -9,10 +9,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
 
       - name: Deploy default docs to Github repository
-        uses: JamesIves/github-pages-deploy-action@v4.6.1
+        uses: JamesIves/github-pages-deploy-action@v4.7.3
         with:
           folder: docs/default
           ssh-key: ${{ secrets.DOCS_DEPLOY_KEY }}
@@ -23,7 +23,7 @@ jobs:
           target-folder: docs/ezlib
 
       - name: Deploy ES docs to Github repository
-        uses: JamesIves/github-pages-deploy-action@v4.6.1
+        uses: JamesIves/github-pages-deploy-action@v4.7.3
         with:
           folder: docs/es
           ssh-key: ${{ secrets.DOCS_DEPLOY_KEY }}

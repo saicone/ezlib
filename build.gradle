@@ -26,9 +26,16 @@ allprojects {
     }
 
     java {
-        toolchain.languageVersion.set(JavaLanguageVersion.of(8))
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
         withSourcesJar()
         withJavadocJar()
+    }
+
+    javadoc {
+        options {
+            links 'https://docs.oracle.com/en/java/javase/25/docs/api/'
+        }
     }
 }
 
@@ -62,10 +69,20 @@ def javadocProjects= [
 ]
 
 tasks.register('allJavadoc', Javadoc) {
+    group = 'documentation'
+
     source javadocProjects.collect { project(it).sourceSets.main.allJava }
     classpath = files(javadocProjects.collect { project(it).sourceSets.main.compileClasspath })
+    javadocTool.set(javaToolchains.javadocToolFor {
+        languageVersion.set(JavaLanguageVersion.of(25))
+    })
+
     options {
-        links 'https://docs.oracle.com/en/java/javase/11/docs/api/'
+        def allLinks = javadocProjects.collect { projectPath ->
+            project(projectPath).javadoc.options.links
+        }.flatten().unique()
+        allLinks.each { link -> links link }
     }
+
     destinationDir = file(project.layout.buildDirectory.dir('docs/all-javadoc'))
 }
