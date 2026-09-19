@@ -79,11 +79,11 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.saicone.ezlib:ezlib:1.3.3'
-    implementation 'com.saicone.ezlib:loader:1.3.3'
+    implementation 'com.saicone.ezlib:ezlib:1.3.4'
+    implementation 'com.saicone.ezlib:loader:1.3.4'
     // The annotation module should be implemented as annotation processor
-    compileOnly 'com.saicone.ezlib:annotations:1.3.3'
-    annotationProcessor 'com.saicone.ezlib:annotations:1.3.3'
+    compileOnly 'com.saicone.ezlib:annotations:1.3.4'
+    annotationProcessor 'com.saicone.ezlib:annotations:1.3.4'
 }
 
 jar.dependsOn (shadowJar)
@@ -107,11 +107,11 @@ repositories {
 }
 
 dependencies {
-    implementation("com.saicone.ezlib:ezlib:1.3.3")
-    implementation("com.saicone.ezlib:loader:1.3.3")
+    implementation("com.saicone.ezlib:ezlib:1.3.4")
+    implementation("com.saicone.ezlib:loader:1.3.4")
     // The annotation module should be implemented as annotation processor
-    compileOnly("com.saicone.ezlib:annotations:1.3.3")
-    annotationProcessor("com.saicone.ezlib:annotations:1.3.3")
+    compileOnly("com.saicone.ezlib:annotations:1.3.4")
+    annotationProcessor("com.saicone.ezlib:annotations:1.3.4")
 }
 
 tasks {
@@ -142,21 +142,21 @@ tasks {
 <dependency>
     <groupId>com.saicone.ezlib</groupId>
     <artifactId>ezlib</artifactId>
-    <version>1.3.3</version>
+    <version>1.3.4</version>
     <scope>compile</scope>
 </dependency>
 <!-- Use ezlib loader -->
 <dependency>
     <groupId>com.saicone.ezlib</groupId>
     <artifactId>loader</artifactId>
-    <version>1.3.3</version>
+    <version>1.3.4</version>
     <scope>compile</scope>
 </dependency>
 <!-- Use annotations -->
 <dependency>
     <groupId>com.saicone.ezlib</groupId>
     <artifactId>annotations</artifactId>
-    <version>1.3.3</version>
+    <version>1.3.4</version>
     <scope>provided</scope>
 </dependency>
 </dependencies>
